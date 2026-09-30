@@ -1,10 +1,9 @@
 --- a/chrome/app/chrome_crash_reporter_client_win.cc
 +++ b/chrome/app/chrome_crash_reporter_client_win.cc
-@@ -49,7 +49,17 @@ void ChromeCrashReporterClient::InitializeCrashReportingForProcess() {
-   if (process_type != install_static::kCrashpadHandler &&
+@@ -60,6 +60,16 @@
        process_type != install_static::kFallbackHandler) {
      crash_reporter::SetCrashReporterClient(instance);
-
+ 
 +    // Ezer: unless explicitly opted in, skip spawning/connecting to the
 +    // Crashpad handler process so no extra background processes are
 +    // created. The client above stays registered so other code paths that
@@ -20,9 +19,7 @@
        install_static::GetUserDataDirectory(&user_data_dir, nullptr);
 --- a/chrome/browser/helium_flag_entries.h
 +++ b/chrome/browser/helium_flag_entries.h
-@@ -82,7 +82,12 @@
-     {helium::kHeliumHidePageActionsCommandLine, "Hide all page actions",
-      "Hides all page actions at the end of address bar. This includes: "
+@@ -84,5 +84,10 @@
       "bookmark star, page zoom, PWA install/open, local file access, and more. "
       "Important actions and indicators will be missing. Helium flag.",
       kOsDesktop, FEATURE_VALUE_TYPE(features::kHeliumHidePageActions)},
