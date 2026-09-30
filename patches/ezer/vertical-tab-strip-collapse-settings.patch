@@ -77,18 +77,18 @@
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
 @@ -313,6 +313,12 @@
-     </message>
      <message name="IDS_SETTINGS_SHOW_PROGRESS_BAR" desc="Label for the toggle that shows loading progress in the address bar.">
        Show loading progress in the address bar
-+    </message>
+     </message>
 +    <message name="IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED" desc="Label for the toggle that makes new browser windows start with the vertical tab strip collapsed to icons only.">
 +      Show sidebar as icons only
 +    </message>
 +    <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON" desc="Label for the toggle that expands the icon-only vertical tab strip to its last size when hovered.">
 +      Expand on hover (restores last size)
-     </message>
++    </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
+     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -606,6 +606,9 @@
