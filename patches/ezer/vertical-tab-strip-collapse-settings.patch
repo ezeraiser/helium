@@ -76,7 +76,7 @@
          base::UserMetricsAction("VerticalTabs_ExpandOnHover_Enabled"));
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -311,6 +311,12 @@
+@@ -313,6 +313,12 @@
      </message>
      <message name="IDS_SETTINGS_SHOW_PROGRESS_BAR" desc="Label for the toggle that shows loading progress in the address bar.">
        Show loading progress in the address bar
