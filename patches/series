@@ -258,7 +258,6 @@ helium/settings/network-and-security-page.patch
 helium/settings/sync-setup-contract.patch
 
 helium/hop/setup.patch
-helium/hop/disable-password-manager.patch
 
 helium/ui/layout-constants.patch
 helium/ui/layout-provider.patch
@@ -366,3 +365,6 @@ helium/ui/compact-debugger-warning.patch
 helium/ui/progress-bar.patch
 helium/ui/exclusive-access-bubble.patch
 helium/ui/hide-page-actions-flag.patch
+
+ezer/vertical-tab-strip-collapse-settings.patch
+ezer/disable-crashpad-engine.patch

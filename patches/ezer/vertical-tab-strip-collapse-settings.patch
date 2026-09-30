@@ -1,0 +1,161 @@
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -631,6 +631,11 @@ inline constexpr char kHeliumLayout[] = "helium.browser.layout";
+ // A boolean pref set to true if vertical tabs should be on the right side.
+ inline constexpr char kHeliumVerticalRightAligned[] =
+     "helium.browser.vertical_right_aligned";
++
++// A boolean pref set to true if the icon-only (collapsed) vertical tab strip
++// should expand on hover, restoring its last uncollapsed width.
++inline constexpr char kHeliumVerticalExpandOnHover[] =
++    "helium.browser.vertical_expand_on_hover";
+
+ // A boolean pref set to true if zen mode is enabled.
+ inline constexpr char kHeliumZenMode[] = "helium.browser.zen_mode";
+--- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
++++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
+@@ -29,6 +29,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterIntegerPref(prefs::kHeliumLayout,
+                                 std::to_underlying(HeliumLayoutType::kClassic));
+   registry->RegisterBooleanPref(prefs::kHeliumVerticalRightAligned, false);
++  registry->RegisterBooleanPref(prefs::kHeliumVerticalExpandOnHover, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenMode, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeSidebarPinned, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeTopChromePinned, false);
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -236,2 +236,7 @@ const PrefsUtil::TypedPrefMap& PrefsUtil
+   (*s_allowlist)[::prefs::kHeliumNativeFrameMaterials] =
+       settings_api::PrefType::kBoolean;
++
++  (*s_allowlist)[::prefs::kVerticalTabsCollapsedState] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumVerticalExpandOnHover] =
++      settings_api::PrefType::kBoolean;
+--- a/chrome/browser/ui/tabs/vertical_tab_strip_state_controller.cc
++++ b/chrome/browser/ui/tabs/vertical_tab_strip_state_controller.cc
+@@ -66,6 +66,14 @@ VerticalTabStripStateController::Vertica
+       base::BindRepeating(&VerticalTabStripStateController::OnModeChanged,
+                           base::Unretained(this)));
+
++  is_expand_on_hover_enabled_ =
++      pref_service_->GetBoolean(prefs::kHeliumVerticalExpandOnHover);
++  pref_change_registrar_.Add(
++      prefs::kHeliumVerticalExpandOnHover,
++      base::BindRepeating(
++          &VerticalTabStripStateController::OnExpandOnHoverEnabledChanged,
++          base::Unretained(this)));
++
+   if (restored_state_collapsed.has_value()) {
+     SetCollapsed(restored_state_collapsed.value());
+   }
+@@ -248,7 +255,9 @@ bool VerticalTabStripStateController::Is
+   return is_expand_on_hover_enabled_;
+ }
+
+-void VerticalTabStripStateController::SetExpandOnHoverEnabled(bool enabled) {}
++void VerticalTabStripStateController::SetExpandOnHoverEnabled(bool enabled) {
++  pref_service_->SetBoolean(prefs::kHeliumVerticalExpandOnHover, enabled);
++}
+
+ void VerticalTabStripStateController::SetIsResizing(bool is_resizing) {
+   if (is_resizing_ == is_resizing) {
+@@ -329,7 +338,8 @@ void VerticalTabStripStateController::On
+ }
+
+ void VerticalTabStripStateController::OnExpandOnHoverEnabledChanged() {
+-  is_expand_on_hover_enabled_ = false;
++  is_expand_on_hover_enabled_ =
++      pref_service_->GetBoolean(prefs::kHeliumVerticalExpandOnHover);
+   if (is_expand_on_hover_enabled_) {
+     base::RecordAction(
+         base::UserMetricsAction("VerticalTabs_ExpandOnHover_Enabled"));
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -289,6 +289,12 @@
+     <message name="IDS_SETTINGS_TAB_STRIP_RIGHT_ALIGN" desc="Label for the toggle that displays vertical tabs on the right side of the browser window.">
+       Show vertical tabs on right side
+     </message>
++    <message name="IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED" desc="Label for the toggle that makes new browser windows start with the vertical tab strip collapsed to icons only.">
++      Show sidebar as icons only
++    </message>
++    <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON" desc="Label for the toggle that expands the icon-only vertical tab strip to its last size when hovered.">
++      Expand on hover (restores last size)
++    </message>
+     <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
+       Frameless mode
+     </message>
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -603,4 +603,7 @@ void AddAppearanceStrings(content::WebUI
+       {"browserLayoutVertical", IDS_SETTINGS_BROWSER_LAYOUT_VERTICAL},
+       {"tabStripRightAlign", IDS_SETTINGS_TAB_STRIP_RIGHT_ALIGN},
++      {"verticalTabsShowCollapsed", IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED},
++      {"verticalTabsExpandOnHoverIcon",
++       IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON},
+       {"browserZenMode", IDS_SETTINGS_BROWSER_ZEN_MODE},
+       {"browserZenModeDescription", IDS_SETTINGS_BROWSER_ZEN_MODE_DESCRIPTION},
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -161,6 +161,7 @@ export class SettingsAppearancePageEleme
+       themeIdPref_: {type: Object},
+       themePolicyColorPref_: {type: Object},
+       zenModePref_: {type: Object},
++      verticalTabsCollapsedStatePref_: {type: Object},
+
+       // <if expr="is_linux">
+       themeSystemThemePref_: {type: Object},
+@@ -228,6 +229,8 @@ export class SettingsAppearancePageEleme
+   protected accessor themePolicyColorPref_: PrefObject<number>|undefined =
+       undefined;
+   protected accessor zenModePref_: PrefObject<boolean>|undefined = undefined;
++  protected accessor verticalTabsCollapsedStatePref_: PrefObject<boolean>|
++      undefined = undefined;
+
+   // <if expr="is_linux">
+   protected accessor themeSystemThemePref_: PrefObject<number>|undefined =
+@@ -370,4 +373,5 @@ export class SettingsAppearancePageEleme
+       'toolbar.pinned_actions': 'pinnedActionsPref_',
+       'helium.browser.zen_mode': 'zenModePref_',
++      'vertical_tabs.collapsed_state': 'verticalTabsCollapsedStatePref_',
+       'webkit.webprefs.default_font_size': 'defaultFontSizePref_',
+     });
+@@ -718,6 +722,17 @@ export class SettingsAppearancePageEleme
+   protected showCenteredLocationBarSetting_(): boolean {
+     return this.browserLayoutPref_?.value !== BrowserLayout.COMPACT;
+   }
++
++  // Ezer: vertical tab strip icon-only mode settings are only meaningful
++  // while the browser is not in Frameless (zen) mode.
++  protected ezerVerticalCollapseSettingsDisabled_(): boolean {
++    return !!this.zenModePref_?.value;
++  }
++
++  protected ezerVerticalExpandOnHoverDisabled_(): boolean {
++    return this.ezerVerticalCollapseSettingsDisabled_() ||
++        !this.verticalTabsCollapsedStatePref_?.value;
++  }
+
+
+   protected onManagedDialogClose_() {
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
+@@ -73,6 +73,18 @@ export function getHtml(this: SettingsAp
+           pref-key="helium.browser.vertical_right_aligned"
+           label="$i18n{tabStripRightAlign}">
+       </settings-toggle-button>
++      <settings-toggle-button class="hr"
++          ?hidden="${!this.showVerticalSettings_()}"
++          ?disabled="${this.ezerVerticalCollapseSettingsDisabled_()}"
++          pref-key="vertical_tabs.collapsed_state"
++          label="$i18n{verticalTabsShowCollapsed}">
++      </settings-toggle-button>
++      <settings-toggle-button class="hr"
++          ?hidden="${!this.showVerticalSettings_()}"
++          ?disabled="${this.ezerVerticalExpandOnHoverDisabled_()}"
++          pref-key="helium.browser.vertical_expand_on_hover"
++          label="$i18n{verticalTabsExpandOnHoverIcon}">
++      </settings-toggle-button>
+       <settings-toggle-button class="hr"
+           ?hidden="${!this.showCenteredLocationBarSetting_()}"
+           pref-key="helium.browser.centered_location_bar"
