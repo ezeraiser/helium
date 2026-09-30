@@ -1297,6 +1297,18 @@
     "message": "Show loading progress in the address bar"
   },
   {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that makes new browser windows start with the vertical tab strip collapsed to icons only.",
+    "message": "Show sidebar as icons only"
+  },
+  {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that expands the icon-only vertical tab strip to its last size when hovered.",
+    "message": "Expand on hover (restores last size)"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",
