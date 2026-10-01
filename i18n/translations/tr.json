@@ -1408,5 +1408,20 @@
     "name": "IDS_HELIUM_ONBOARDING_PASSWORD_MANAGERS_KEE_PASS_XC",
     "source": "Free, local, and open-source password manager for advanced users. Requires technical knowledge to set up and use. Cannot sync without extra software.",
     "message": "İleri düzey kullanıcılar için ücretsiz, yerel ve açık kaynaklı parola yöneticisi. Kurulumu ve kullanımı teknik bilgi gerektirir. Ek yazılım olmadan eşitleme yapamaz."
+  },
+  {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED",
+    "source": "Show sidebar as icons only",
+    "message": "Kenar çubuğunu yalnızca simge olarak göster"
+  },
+  {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON",
+    "source": "Expand on hover (restores last size)",
+    "message": "Üzerine gelince genişlet (son boyutu geri yükler)"
+  },
+  {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY",
+    "source": "Delay",
+    "message": "Gecikme"
   }
 ]

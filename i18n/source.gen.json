@@ -1309,6 +1309,12 @@
     "message": "Expand on hover (restores last size)"
   },
   {
+    "name": "IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.",
+    "message": "Delay"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",
