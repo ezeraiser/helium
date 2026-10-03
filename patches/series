@@ -368,3 +368,4 @@ helium/ui/hide-page-actions-flag.patch
 
 ezer/vertical-tab-strip-collapse-settings.patch
 ezer/disable-crashpad-engine.patch
+ezer/v8-regexp-special-case-root-locale.patch
