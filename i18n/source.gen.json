@@ -1315,6 +1315,24 @@
     "message": "Delay"
   },
   {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that shows the bookmark sidebar, an icon-only strip of the user's bookmarks docked to a window edge.",
+    "message": "Show bookmark sidebar"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that moves the bookmark sidebar to the right side of the window.",
+    "message": "Show bookmark sidebar on the right"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that makes the icon-only bookmark sidebar expand to show bookmark titles when hovered.",
+    "message": "Expand bookmark sidebar on hover"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

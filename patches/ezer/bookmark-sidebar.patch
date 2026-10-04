@@ -1,0 +1,993 @@
+--- a/chrome/common/pref_names.h
++++ b/chrome/common/pref_names.h
+@@ -644,6 +644,26 @@
+ inline constexpr char kHeliumVerticalExpandOnHoverDelayMs[] =
+     "helium.browser.vertical_expand_on_hover_delay_ms";
+ 
++// A boolean pref set to true if the bookmark sidebar (an icon strip showing
++// the bookmark bar's items along a window edge) should be shown.
++inline constexpr char kHeliumBookmarkSidebarVisible[] =
++    "helium.browser.bookmark_sidebar.visible";
++
++// A boolean pref set to true if the bookmark sidebar should be on the right
++// side of the window instead of the left.
++inline constexpr char kHeliumBookmarkSidebarRightAligned[] =
++    "helium.browser.bookmark_sidebar.right_aligned";
++
++// A boolean pref set to true if the bookmark sidebar should expand to show
++// bookmark titles while the mouse hovers over it.
++inline constexpr char kHeliumBookmarkSidebarExpandOnHover[] =
++    "helium.browser.bookmark_sidebar.expand_on_hover";
++
++// An integer pref (milliseconds) for how long the mouse must hover over the
++// bookmark sidebar before it expands.
++inline constexpr char kHeliumBookmarkSidebarExpandDelayMs[] =
++    "helium.browser.bookmark_sidebar.expand_delay_ms";
++
+ // A boolean pref set to true if zen mode is enabled.
+ inline constexpr char kHeliumZenMode[] = "helium.browser.zen_mode";
+ 
+--- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
++++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
+@@ -35,6 +35,13 @@
+   registry->RegisterBooleanPref(prefs::kHeliumVerticalExpandOnHover, false);
+   registry->RegisterIntegerPref(prefs::kHeliumVerticalExpandOnHoverDelayMs,
+                                 100);
++  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarVisible, false);
++  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarRightAligned,
++                                false);
++  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarExpandOnHover,
++                                true);
++  registry->RegisterIntegerPref(prefs::kHeliumBookmarkSidebarExpandDelayMs,
++                                100);
+   registry->RegisterBooleanPref(prefs::kHeliumZenMode, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeSidebarPinned, false);
+   registry->RegisterBooleanPref(prefs::kHeliumZenModeTopChromePinned, false);
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -242,6 +242,14 @@
+       settings_api::PrefType::kBoolean;
+   (*s_allowlist)[::prefs::kHeliumVerticalExpandOnHoverDelayMs] =
+       settings_api::PrefType::kNumber;
++  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarVisible] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarRightAligned] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarExpandOnHover] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarExpandDelayMs] =
++      settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kHeliumNativeFrameMaterials] =
+       settings_api::PrefType::kBoolean;
+ 
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -322,6 +322,15 @@
+     <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
+       Delay
+     </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW" desc="Label for the toggle that shows the bookmark sidebar, an icon-only strip of the user's bookmarks docked to a window edge.">
++      Show bookmark sidebar
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN" desc="Label for the toggle that moves the bookmark sidebar to the right side of the window.">
++      Show bookmark sidebar on the right
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER" desc="Label for the toggle that makes the icon-only bookmark sidebar expand to show bookmark titles when hovered.">
++      Expand bookmark sidebar on hover
++    </message>
+     <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
+       Frameless mode
+     </message>
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -611,6 +611,10 @@
+        IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON},
+       {"verticalTabsExpandOnHoverDelay",
+        IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY},
++      {"bookmarkSidebarShow", IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW},
++      {"bookmarkSidebarRightAlign", IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN},
++      {"bookmarkSidebarExpandOnHover",
++       IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER},
+       {"browserZenMode", IDS_SETTINGS_BROWSER_ZEN_MODE},
+       {"browserZenModeDescription", IDS_SETTINGS_BROWSER_ZEN_MODE_DESCRIPTION},
+       {"zenModePinSidebar", IDS_SETTINGS_ZEN_PIN_SIDEBAR},
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.ts
+@@ -156,6 +156,8 @@
+       zenModePref_: {type: Object},
+       verticalTabsCollapsedStatePref_: {type: Object},
+       heliumVerticalExpandOnHoverPref_: {type: Object},
++      bookmarkSidebarVisiblePref_: {type: Object},
++      bookmarkSidebarExpandOnHoverPref_: {type: Object},
+ 
+       // <if expr="is_linux">
+       themeSystemThemePref_: {type: Object},
+@@ -230,6 +232,10 @@
+       undefined = undefined;
+   protected accessor heliumVerticalExpandOnHoverPref_: PrefObject<boolean>|
+       undefined = undefined;
++  protected accessor bookmarkSidebarVisiblePref_: PrefObject<boolean>|
++      undefined = undefined;
++  protected accessor bookmarkSidebarExpandOnHoverPref_: PrefObject<boolean>|
++      undefined = undefined;
+ 
+   // <if expr="is_linux">
+   protected accessor themeSystemThemePref_: PrefObject<number>|undefined =
+@@ -390,6 +396,9 @@
+       'vertical_tabs.collapsed_state': 'verticalTabsCollapsedStatePref_',
+       'helium.browser.vertical_expand_on_hover':
+           'heliumVerticalExpandOnHoverPref_',
++      'helium.browser.bookmark_sidebar.visible': 'bookmarkSidebarVisiblePref_',
++      'helium.browser.bookmark_sidebar.expand_on_hover':
++          'bookmarkSidebarExpandOnHoverPref_',
+       'webkit.webprefs.default_font_size': 'defaultFontSizePref_',
+     });
+ 
+--- a/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
++++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
+@@ -135,6 +135,32 @@
+           label="$i18n{zenModePinToolbar}">
+       </settings-toggle-button>
+     </div>
++    <settings-toggle-button class="hr"
++        pref-key="helium.browser.bookmark_sidebar.visible"
++        label="$i18n{bookmarkSidebarShow}">
++    </settings-toggle-button>
++    <div class="list-frame indented-toggles"
++        ?hidden="${!this.bookmarkSidebarVisiblePref_?.value}">
++      <settings-toggle-button class="hr"
++          pref-key="helium.browser.bookmark_sidebar.right_aligned"
++          label="$i18n{bookmarkSidebarRightAlign}">
++      </settings-toggle-button>
++      <settings-toggle-button class="hr"
++          pref-key="helium.browser.bookmark_sidebar.expand_on_hover"
++          label="$i18n{bookmarkSidebarExpandOnHover}">
++      </settings-toggle-button>
++      <div class="cr-row"
++          ?hidden="${!this.bookmarkSidebarExpandOnHoverPref_?.value}">
++        <div class="flex cr-padded-text" aria-hidden="true">
++          $i18n{verticalTabsExpandOnHoverDelay}
++        </div>
++        <settings-dropdown-menu id="bookmarkSidebarExpandDelay"
++            label="$i18n{verticalTabsExpandOnHoverDelay}"
++            pref-key="helium.browser.bookmark_sidebar.expand_delay_ms"
++            .menuOptions="${this.expandOnHoverDelayOptions_}">
++        </settings-dropdown-menu>
++      </div>
++    </div>
+     <div class="hr" ?hidden="${!this.showHr_(
+         this.pageVisibility_.setTheme, this.pageVisibility_.homeButton)}">
+     </div>
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -122,6 +122,7 @@
+ 
+ #define IDC_CTRL_S_SHORTCUT             34090
+ #define IDC_TOGGLE_ZEN_MODE_TOP_CHROME_PIN 34091
++#define IDC_TOGGLE_BOOKMARK_SIDEBAR     34092
+ 
+ // Tab group Commands
+ #define IDC_ADD_NEW_TAB_TO_GROUP      34100
+--- a/chrome/browser/ui/accelerator_table.cc
++++ b/chrome/browser/ui/accelerator_table.cc
+@@ -132,6 +132,8 @@
+ #endif  // BUILDFLAG(IS_LINUX)
+     {ui::VKEY_B, ui::EF_SHIFT_DOWN | ui::EF_PLATFORM_ACCELERATOR,
+      IDC_SHOW_BOOKMARK_BAR},
++    {ui::VKEY_Y, ui::EF_SHIFT_DOWN | ui::EF_PLATFORM_ACCELERATOR,
++     IDC_TOGGLE_BOOKMARK_SIDEBAR},
+     {ui::VKEY_OEM_MINUS, ui::EF_PLATFORM_ACCELERATOR, IDC_ZOOM_MINUS},
+     {ui::VKEY_SUBTRACT, ui::EF_PLATFORM_ACCELERATOR, IDC_ZOOM_MINUS},
+     {ui::VKEY_0, ui::EF_PLATFORM_ACCELERATOR, IDC_ZOOM_NORMAL},
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -1527,6 +1527,13 @@
+       }
+       break;
+     }
++    case IDC_TOGGLE_BOOKMARK_SIDEBAR: {
++      PrefService* prefs = profile()->GetPrefs();
++      prefs->SetBoolean(
++          prefs::kHeliumBookmarkSidebarVisible,
++          !prefs->GetBoolean(prefs::kHeliumBookmarkSidebarVisible));
++      break;
++    }
+     // Hosted App commands
+     case IDC_COPY_URL:
+       CopyURL(browser_, browser_->tab_strip_model()->GetActiveWebContents());
+@@ -2080,6 +2087,7 @@
+   // These are always enabled; the menu determines their menu item visibility.
+   command_updater_->UpdateCommandEnabled(IDC_UPGRADE_DIALOG, true);
+   command_updater_->UpdateCommandEnabled(IDC_HELIUM_SERVICES_OPEN, true);
++  command_updater_->UpdateCommandEnabled(IDC_TOGGLE_BOOKMARK_SIDEBAR, true);
+   command_updater_->UpdateCommandEnabled(IDC_TOGGLE_ZEN_MODE_TOP_CHROME_PIN,
+                                          false);
+   command_updater_->UpdateCommandEnabled(IDC_SET_BROWSER_AS_DEFAULT, true);
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -2544,6 +2544,8 @@
+       "views/frame/app_menu_button.h",
+       "views/frame/base_tab_strip_region_view.cc",
+       "views/frame/base_tab_strip_region_view.h",
++      "views/frame/bookmark_sidebar_view.cc",
++      "views/frame/bookmark_sidebar_view.h",
+       "views/frame/browser_frame_view.cc",
+       "views/frame/browser_frame_view.h",
+       "views/frame/browser_root_view.cc",
+--- a/chrome/browser/ui/views/frame/layout/browser_view_layout.h
++++ b/chrome/browser/ui/views/frame/layout/browser_view_layout.h
+@@ -16,6 +16,7 @@
+ #include "ui/views/layout/layout_manager.h"
+ 
+ class BookmarkBarView;
++class BookmarkSidebarView;
+ class BrowserWindowInterface;
+ class BrowserViewLayoutDelegate;
+ class InfoBarContainerView;
+@@ -71,6 +72,7 @@
+   raw_ptr<VerticalTabStripRegionView> vertical_tab_strip_region_view = nullptr;
+   raw_ptr<VerticalTabStripBackgroundBlurBackdrop>
+       vertical_tab_strip_background_blur_backdrop = nullptr;
++  raw_ptr<BookmarkSidebarView> bookmark_sidebar = nullptr;
+   raw_ptr<OrganizerPanelView> organizer_panel_container = nullptr;
+   raw_ptr<views::View> toolbar = nullptr;
+   raw_ptr<InfoBarContainerView> infobar_container = nullptr;
+--- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
++++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
+@@ -29,6 +29,7 @@
+ #include "chrome/browser/ui/views/animations/side_panel_animations.h"
+ #include "chrome/browser/ui/views/animations/tab_strip_animations.h"
+ #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
++#include "chrome/browser/ui/views/frame/bookmark_sidebar_view.h"
+ #include "chrome/browser/ui/views/frame/browser_view.h"
+ #include "chrome/browser/ui/views/frame/custom_corners.h"
+ #include "chrome/browser/ui/views/frame/custom_corners_background.h"
+@@ -1385,6 +1386,36 @@
+   CHECK(IsParentedToAndVisible(views().multi_contents_view,
+                                views().browser_view));
+ 
++  // Ezer: the bookmark sidebar sits beside the contents, below the top
++  // container and infobars. Only the collapsed (icon-only) width is reserved
++  // out of the contents area; while hover-expanded the strip is drawn over the
++  // page instead of pushing it around.
++  if (views().bookmark_sidebar &&
++      IsParentedTo(views().bookmark_sidebar, views().browser_view)) {
++    const bool bookmark_sidebar_visible =
++        views().bookmark_sidebar->ShouldShow() &&
++        !is_fullscreen(layout_data_->window_state);
++    gfx::Rect bookmark_sidebar_bounds;
++    if (bookmark_sidebar_visible) {
++      const bool bookmark_sidebar_right =
++          views().bookmark_sidebar->IsRightAligned();
++      const int reserved_width = std::min(BookmarkSidebarView::kCollapsedWidth,
++                                          params.visual_client_area.width());
++      const int current_width =
++          std::max(reserved_width, views().bookmark_sidebar->GetCurrentWidth());
++      bookmark_sidebar_bounds =
++          gfx::Rect(bookmark_sidebar_right
++                        ? params.visual_client_area.right() - current_width
++                        : params.visual_client_area.x(),
++                    params.visual_client_area.y(), current_width,
++                    params.visual_client_area.height());
++      params.InsetHorizontal(reserved_width,
++                             /*leading=*/!bookmark_sidebar_right);
++    }
++    layout.AddChild(views().bookmark_sidebar, bookmark_sidebar_bounds,
++                    bookmark_sidebar_visible);
++  }
++
+   // Because side panels have minimum width, in a small browser, it is possible
+   // for the combination of minimum-sized contents pane and minimum-sized side
+   // panel may exceed the width of the window. In this case, the contents pane
+--- a/chrome/browser/ui/views/frame/browser_view.h
++++ b/chrome/browser/ui/views/frame/browser_view.h
+@@ -79,6 +79,7 @@
+ class AppMenuControl;
+ class BookmarkBarController;
+ class BookmarkBarView;
++class BookmarkSidebarView;
+ class BrowserWindowInterface;
+ class BrowserViewLayout;
+ class ContentsContainerView;
+@@ -1303,6 +1304,10 @@
+   raw_ptr<VerticalTabStripBackgroundBlurBackdrop>
+       vertical_tab_strip_background_blur_backdrop_ = nullptr;
+ 
++  // Ezer: icon strip of the bookmark bar's items along a window edge. Only
++  // created for normal browser windows.
++  raw_ptr<BookmarkSidebarView> bookmark_sidebar_view_ = nullptr;
++
+   // The view responsible for housing the contents of the organizer panel.
+   raw_ptr<OrganizerPanelView> organizer_panel_container_ = nullptr;
+ 
+--- a/chrome/browser/ui/views/frame/browser_view.cc
++++ b/chrome/browser/ui/views/frame/browser_view.cc
+@@ -164,6 +164,7 @@
+ #include "chrome/browser/ui/views/find_bar_host.h"
+ #include "chrome/browser/ui/views/find_bar_owner.h"
+ #include "chrome/browser/ui/views/frame/app_menu_button.h"
++#include "chrome/browser/ui/views/frame/bookmark_sidebar_view.h"
+ #include "chrome/browser/ui/views/frame/browser_frame_view.h"
+ #include "chrome/browser/ui/views/frame/browser_native_widget.h"
+ #include "chrome/browser/ui/views/frame/browser_widget.h"
+@@ -1099,6 +1100,11 @@
+     horizontal_tab_strip_region_view_->InitializeTabStrip();
+   }
+ 
++  if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
++    bookmark_sidebar_view_ = AddChildView(
++        std::make_unique<BookmarkSidebarView>(browser_.get()));
++  }
++
+   auto* const organizer_panel_state_controller =
+       OrganizerPanelStateController::From(browser_);
+   if (organizer_panel_state_controller) {
+@@ -1255,6 +1261,7 @@
+   side_panel_content_transition_scrim_view_ = nullptr;
+   vertical_tab_strip_region_view_ = nullptr;
+   vertical_tab_strip_background_blur_backdrop_ = nullptr;
++  bookmark_sidebar_view_ = nullptr;
+   organizer_panel_container_ = nullptr;
+   side_panel_ = nullptr;
+ 
+@@ -5822,6 +5829,7 @@
+   layout_views.vertical_tab_strip_region_view = vertical_tab_strip_region_view_;
+   layout_views.vertical_tab_strip_background_blur_backdrop =
+       vertical_tab_strip_background_blur_backdrop_;
++  layout_views.bookmark_sidebar = bookmark_sidebar_view_;
+   layout_views.organizer_panel_container = organizer_panel_container_;
+   layout_views.toolbar = toolbar_;
+   layout_views.infobar_container = infobar_container_;
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
+@@ -0,0 +1,159 @@
++// Copyright 2026 The Helium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
++#define CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
++
++#include <map>
++#include <memory>
++#include <set>
++#include <string>
++#include <vector>
++
++#include "base/location.h"
++#include "base/memory/raw_ptr.h"
++#include "base/scoped_observation.h"
++#include "base/timer/timer.h"
++#include "components/bookmarks/browser/bookmark_model_observer.h"
++#include "components/prefs/pref_change_registrar.h"
++#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/base/mojom/menu_source_type.mojom-forward.h"
++#include "ui/menus/simple_menu_model.h"
++#include "ui/views/context_menu_controller.h"
++#include "ui/views/controls/menu/menu_runner.h"
++#include "ui/views/view.h"
++#include "url/gurl.h"
++
++class Browser;
++
++namespace bookmarks {
++class BookmarkModel;
++class BookmarkNode;
++}  // namespace bookmarks
++
++namespace views {
++class BoxLayoutView;
++class LabelButton;
++class ScrollView;
++}  // namespace views
++
++// Ezer: a slim strip, docked to the left or right edge of the browser window,
++// that shows the bookmark bar's items as icons (favicons for bookmarks, a
++// folder glyph for folders) and optionally expands to show titles while the
++// mouse hovers over it. It is independent of the (horizontal) bookmark bar and
++// of the vertical tab strip, and is laid out by BrowserViewTabbedLayoutImpl.
++class BookmarkSidebarView : public views::View,
++                            public bookmarks::BookmarkModelObserver,
++                            public ui::SimpleMenuModel::Delegate,
++                            public views::ContextMenuController {
++  METADATA_HEADER(BookmarkSidebarView, views::View)
++
++ public:
++  // Width of the icon-only strip. This is also the width the layout reserves
++  // for the strip; the hover-expanded state overlays the page content.
++  static constexpr int kCollapsedWidth = 40;
++  static constexpr int kExpandedWidth = 240;
++
++  explicit BookmarkSidebarView(Browser* browser);
++  BookmarkSidebarView(const BookmarkSidebarView&) = delete;
++  BookmarkSidebarView& operator=(const BookmarkSidebarView&) = delete;
++  ~BookmarkSidebarView() override;
++
++  // Whether the user has the sidebar turned on.
++  bool ShouldShow() const;
++  bool IsRightAligned() const;
++  bool IsExpanded() const { return expanded_; }
++
++  // Width the strip currently wants to occupy (>= kCollapsedWidth).
++  int GetCurrentWidth() const;
++
++  // Toggles the visibility pref; used by the keyboard shortcut / menus.
++  void ToggleVisibility();
++
++  // views::View:
++  void OnMouseEntered(const ui::MouseEvent& event) override;
++  void OnMouseExited(const ui::MouseEvent& event) override;
++
++  // bookmarks::BookmarkModelObserver:
++  void BookmarkModelLoaded(bool ids_reassigned) override;
++  void BookmarkModelBeingDeleted() override;
++  void BookmarkNodeMoved(const bookmarks::BookmarkNode* old_parent,
++                         size_t old_index,
++                         const bookmarks::BookmarkNode* new_parent,
++                         size_t new_index) override;
++  void BookmarkNodeAdded(const bookmarks::BookmarkNode* parent,
++                         size_t index,
++                         bool added_by_user) override;
++  void BookmarkNodeRemoved(const bookmarks::BookmarkNode* parent,
++                           size_t old_index,
++                           const bookmarks::BookmarkNode* node,
++                           const std::set<GURL>& no_longer_bookmarked,
++                           const base::Location& location) override;
++  void BookmarkNodeChanged(const bookmarks::BookmarkNode* node) override;
++  void BookmarkNodeFaviconChanged(const bookmarks::BookmarkNode* node) override;
++  void BookmarkNodeChildrenReordered(
++      const bookmarks::BookmarkNode* node) override;
++  void BookmarkAllUserNodesRemoved(const std::set<GURL>& removed_urls,
++                                   const base::Location& location) override;
++
++  // ui::SimpleMenuModel::Delegate:
++  bool IsCommandIdChecked(int command_id) const override;
++  void ExecuteCommand(int command_id, int event_flags) override;
++
++  // views::ContextMenuController:
++  void ShowContextMenuForViewImpl(
++      views::View* source,
++      const gfx::Point& point,
++      ui::mojom::MenuSourceType source_type) override;
++
++ private:
++  struct Entry {
++    int64_t node_id = 0;
++    std::u16string title;
++    raw_ptr<views::LabelButton> button = nullptr;
++  };
++
++  // Rebuilds every button from the bookmark bar's children.
++  void Rebuild();
++  void AddButtonsFor(const bookmarks::BookmarkNode* parent);
++  std::unique_ptr<views::LabelButton> CreateButton(
++      const bookmarks::BookmarkNode* node);
++  // Re-applies the collapsed/expanded look (label text, button size) to all
++  // buttons.
++  void UpdateButtons();
++
++  // Reacts to any of the sidebar prefs changing.
++  void OnPrefChanged();
++  void SetExpanded(bool expanded);
++  void InvalidateParentLayout();
++
++  void OnNodePressed(int64_t node_id, const ui::Event& event);
++  void OpenNode(const bookmarks::BookmarkNode* node, int event_flags);
++  void ShowFolderMenu(views::View* anchor,
++                      const bookmarks::BookmarkNode* folder);
++  void BuildFolderMenu(ui::SimpleMenuModel* menu,
++                       const bookmarks::BookmarkNode* folder);
++
++  const raw_ptr<Browser> browser_;
++  raw_ptr<bookmarks::BookmarkModel> model_ = nullptr;
++  base::ScopedObservation<bookmarks::BookmarkModel,
++                          bookmarks::BookmarkModelObserver>
++      model_observation_{this};
++  PrefChangeRegistrar pref_change_registrar_;
++
++  raw_ptr<views::ScrollView> scroll_view_ = nullptr;
++  raw_ptr<views::BoxLayoutView> contents_ = nullptr;
++  std::vector<Entry> entries_;
++
++  bool expanded_ = false;
++  base::OneShotTimer expand_timer_;
++
++  // State of the popup that is open for a folder click or a right click.
++  std::unique_ptr<views::MenuRunner> menu_runner_;
++  std::vector<std::unique_ptr<ui::SimpleMenuModel>> menu_models_;
++  std::map<int, int64_t> menu_command_to_node_id_;
++  int next_menu_command_id_ = 0;
++};
++
++#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
+--- /dev/null
++++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
+@@ -0,0 +1,488 @@
++// Copyright 2026 The Helium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/ui/views/frame/bookmark_sidebar_view.h"
++
++#include <string>
++#include <utility>
++
++#include "base/functional/bind.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/time/time.h"
++#include "chrome/browser/bookmarks/bookmark_model_factory.h"
++#include "chrome/browser/favicon/favicon_utils.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
++#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
++#include "chrome/common/pref_names.h"
++#include "chrome/grit/generated_resources.h"
++#include "components/bookmarks/browser/bookmark_model.h"
++#include "components/bookmarks/browser/bookmark_node.h"
++#include "components/bookmarks/browser/bookmark_utils.h"
++#include "components/prefs/pref_service.h"
++#include "content/public/browser/page_navigator.h"
++#include "content/public/common/referrer.h"
++#include "ui/base/l10n/l10n_util.h"
++#include "ui/base/metadata/metadata_impl_macros.h"
++#include "ui/base/models/image_model.h"
++#include "ui/base/mojom/menu_source_type.mojom.h"
++#include "ui/base/page_transition_types.h"
++#include "ui/base/window_open_disposition_utils.h"
++#include "ui/compositor/layer.h"
++#include "ui/events/event_constants.h"
++#include "ui/gfx/geometry/insets.h"
++#include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/text_constants.h"
++#include "ui/views/background.h"
++#include "ui/views/border.h"
++#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/scroll_view.h"
++#include "ui/views/layout/box_layout.h"
++#include "ui/views/layout/box_layout_view.h"
++#include "ui/views/layout/fill_layout.h"
++#include "ui/views/widget/widget.h"
++
++namespace {
++
++// Command ids of the right-click menu. These live far above the ids handed out
++// to folder-menu entries (which count up from 1).
++constexpr int kCommandShowSidebar = 1000001;
++constexpr int kCommandRightAligned = 1000002;
++constexpr int kCommandExpandOnHover = 1000003;
++
++constexpr int kButtonIconPadding = 8;
++constexpr int kButtonHeight = 16 + 2 * kButtonIconPadding;
++constexpr int kStripPadding = 4;
++constexpr int kButtonSpacing = 2;
++// Thickness of the separator drawn on the edge that faces the page.
++constexpr int kSeparatorThickness = 1;
++
++PrefService* GetPrefs(Browser* browser) {
++  return browser->profile()->GetPrefs();
++}
++
++std::u16string GetNodeTitle(const bookmarks::BookmarkNode* node) {
++  if (!node->GetTitle().empty() || node->is_folder()) {
++    return node->GetTitle();
++  }
++  return base::UTF8ToUTF16(node->url().spec());
++}
++
++}  // namespace
++
++BookmarkSidebarView::BookmarkSidebarView(Browser* browser)
++    : browser_(browser) {
++  SetLayoutManager(std::make_unique<views::FillLayout>());
++  SetNotifyEnterExitOnChild(true);
++  // The expanded strip overlays the page, so it needs its own layer to be
++  // composited above the web contents.
++  SetPaintToLayer();
++  layer()->SetMasksToBounds(true);
++  SetBackground(views::CreateSolidBackground(kColorToolbar));
++
++  scroll_view_ = AddChildView(std::make_unique<views::ScrollView>());
++  scroll_view_->SetBackgroundColor(std::nullopt);
++  scroll_view_->SetDrawOverflowIndicator(false);
++  scroll_view_->SetHorizontalScrollBarMode(
++      views::ScrollView::ScrollBarMode::kDisabled);
++  scroll_view_->SetVerticalScrollBarMode(
++      views::ScrollView::ScrollBarMode::kHiddenButEnabled);
++
++  auto contents = std::make_unique<views::BoxLayoutView>();
++  contents->SetOrientation(views::BoxLayout::Orientation::kVertical);
++  contents->SetCrossAxisAlignment(
++      views::BoxLayout::CrossAxisAlignment::kStretch);
++  contents->SetInsideBorderInsets(gfx::Insets(kStripPadding));
++  contents->SetBetweenChildSpacing(kButtonSpacing);
++  contents_ = scroll_view_->SetContents(std::move(contents));
++
++  model_ = BookmarkModelFactory::GetForBrowserContext(browser_->profile());
++  if (model_) {
++    model_observation_.Observe(model_);
++  }
++
++  pref_change_registrar_.Init(GetPrefs(browser_));
++  for (const char* pref : {prefs::kHeliumBookmarkSidebarVisible,
++                           prefs::kHeliumBookmarkSidebarRightAligned,
++                           prefs::kHeliumBookmarkSidebarExpandOnHover}) {
++    pref_change_registrar_.Add(
++        pref, base::BindRepeating(&BookmarkSidebarView::OnPrefChanged,
++                                  base::Unretained(this)));
++  }
++
++  OnPrefChanged();
++  Rebuild();
++}
++
++BookmarkSidebarView::~BookmarkSidebarView() = default;
++
++bool BookmarkSidebarView::ShouldShow() const {
++  return GetPrefs(browser_)->GetBoolean(prefs::kHeliumBookmarkSidebarVisible);
++}
++
++bool BookmarkSidebarView::IsRightAligned() const {
++  return GetPrefs(browser_)->GetBoolean(
++      prefs::kHeliumBookmarkSidebarRightAligned);
++}
++
++int BookmarkSidebarView::GetCurrentWidth() const {
++  return expanded_ ? kExpandedWidth : kCollapsedWidth;
++}
++
++void BookmarkSidebarView::ToggleVisibility() {
++  GetPrefs(browser_)->SetBoolean(prefs::kHeliumBookmarkSidebarVisible,
++                                 !ShouldShow());
++}
++
++void BookmarkSidebarView::OnMouseEntered(const ui::MouseEvent& event) {
++  PrefService* prefs = GetPrefs(browser_);
++  if (expanded_ ||
++      !prefs->GetBoolean(prefs::kHeliumBookmarkSidebarExpandOnHover)) {
++    return;
++  }
++  expand_timer_.Start(
++      FROM_HERE,
++      base::Milliseconds(
++          prefs->GetInteger(prefs::kHeliumBookmarkSidebarExpandDelayMs)),
++      base::BindOnce(&BookmarkSidebarView::SetExpanded, base::Unretained(this),
++                     true));
++}
++
++void BookmarkSidebarView::OnMouseExited(const ui::MouseEvent& event) {
++  expand_timer_.Stop();
++  // While one of our popup menus is open the pointer is, by definition, not
++  // over us; collapsing underneath the menu would pull its anchor away. The
++  // menu-closed callback collapses the strip instead.
++  if (menu_runner_ && menu_runner_->IsRunning()) {
++    return;
++  }
++  SetExpanded(false);
++}
++
++void BookmarkSidebarView::BookmarkModelLoaded(bool ids_reassigned) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkModelBeingDeleted() {
++  model_observation_.Reset();
++  model_ = nullptr;
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeMoved(
++    const bookmarks::BookmarkNode* old_parent,
++    size_t old_index,
++    const bookmarks::BookmarkNode* new_parent,
++    size_t new_index) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeAdded(
++    const bookmarks::BookmarkNode* parent,
++    size_t index,
++    bool added_by_user) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeRemoved(
++    const bookmarks::BookmarkNode* parent,
++    size_t old_index,
++    const bookmarks::BookmarkNode* node,
++    const std::set<GURL>& no_longer_bookmarked,
++    const base::Location& location) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeChanged(
++    const bookmarks::BookmarkNode* node) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeFaviconChanged(
++    const bookmarks::BookmarkNode* node) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkNodeChildrenReordered(
++    const bookmarks::BookmarkNode* node) {
++  Rebuild();
++}
++
++void BookmarkSidebarView::BookmarkAllUserNodesRemoved(
++    const std::set<GURL>& removed_urls,
++    const base::Location& location) {
++  Rebuild();
++}
++
++bool BookmarkSidebarView::IsCommandIdChecked(int command_id) const {
++  switch (command_id) {
++    case kCommandShowSidebar:
++      return ShouldShow();
++    case kCommandRightAligned:
++      return IsRightAligned();
++    case kCommandExpandOnHover:
++      return GetPrefs(browser_)->GetBoolean(
++          prefs::kHeliumBookmarkSidebarExpandOnHover);
++    default:
++      return false;
++  }
++}
++
++void BookmarkSidebarView::ExecuteCommand(int command_id, int event_flags) {
++  PrefService* prefs = GetPrefs(browser_);
++  switch (command_id) {
++    case kCommandShowSidebar:
++      ToggleVisibility();
++      return;
++    case kCommandRightAligned:
++      prefs->SetBoolean(prefs::kHeliumBookmarkSidebarRightAligned,
++                        !IsRightAligned());
++      return;
++    case kCommandExpandOnHover:
++      prefs->SetBoolean(
++          prefs::kHeliumBookmarkSidebarExpandOnHover,
++          !prefs->GetBoolean(prefs::kHeliumBookmarkSidebarExpandOnHover));
++      return;
++    default:
++      break;
++  }
++
++  auto it = menu_command_to_node_id_.find(command_id);
++  if (it == menu_command_to_node_id_.end() || !model_) {
++    return;
++  }
++  if (const bookmarks::BookmarkNode* node =
++          bookmarks::GetBookmarkNodeByID(model_, it->second)) {
++    OpenNode(node, event_flags);
++  }
++}
++
++void BookmarkSidebarView::ShowContextMenuForViewImpl(
++    views::View* source,
++    const gfx::Point& point,
++    ui::mojom::MenuSourceType source_type) {
++  menu_runner_.reset();
++  menu_models_.clear();
++  menu_command_to_node_id_.clear();
++
++  auto menu = std::make_unique<ui::SimpleMenuModel>(this);
++  menu->AddCheckItem(
++      kCommandShowSidebar,
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW));
++  menu->AddCheckItem(
++      kCommandRightAligned,
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN));
++  menu->AddCheckItem(
++      kCommandExpandOnHover,
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER));
++  ui::SimpleMenuModel* menu_ptr = menu.get();
++  menu_models_.push_back(std::move(menu));
++
++  menu_runner_ = std::make_unique<views::MenuRunner>(
++      menu_ptr, views::MenuRunner::CONTEXT_MENU,
++      base::BindRepeating(
++          [](BookmarkSidebarView* self) {
++            if (!self->IsMouseHovered()) {
++              self->SetExpanded(false);
++            }
++          },
++          base::Unretained(this)));
++  menu_runner_->RunMenuAt(GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
++                          views::MenuAnchorPosition::kTopLeft, source_type);
++}
++
++void BookmarkSidebarView::Rebuild() {
++  contents_->RemoveAllChildViews();
++  entries_.clear();
++  if (!model_ || !model_->loaded()) {
++    return;
++  }
++  AddButtonsFor(model_->bookmark_bar_node());
++  if (const bookmarks::BookmarkNode* account_node =
++          model_->account_bookmark_bar_node()) {
++    AddButtonsFor(account_node);
++  }
++  InvalidateLayout();
++}
++
++void BookmarkSidebarView::AddButtonsFor(const bookmarks::BookmarkNode* parent) {
++  for (const auto& child : parent->children()) {
++    Entry entry;
++    entry.node_id = child->id();
++    entry.title = GetNodeTitle(child.get());
++    entry.button = contents_->AddChildView(CreateButton(child.get()));
++    entries_.push_back(std::move(entry));
++  }
++  UpdateButtons();
++}
++
++std::unique_ptr<views::LabelButton> BookmarkSidebarView::CreateButton(
++    const bookmarks::BookmarkNode* node) {
++  auto button = std::make_unique<views::LabelButton>(
++      base::BindRepeating(&BookmarkSidebarView::OnNodePressed,
++                          base::Unretained(this), node->id()),
++      std::u16string());
++  ConfigureInkDrop(button.get());
++  button->SetBorder(views::CreateEmptyBorder(
++      gfx::Insets::VH(kButtonIconPadding, kButtonIconPadding)));
++  button->SetHorizontalAlignment(gfx::ALIGN_LEFT);
++  button->SetImageLabelSpacing(8);
++  button->SetEnabledTextColors(kColorBookmarkBarForeground);
++  button->label()->SetElideBehavior(gfx::ELIDE_TAIL);
++  button->SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
++                                   ui::EF_MIDDLE_MOUSE_BUTTON);
++  button->SetTooltipText(GetNodeTitle(node));
++  button->set_context_menu_controller(this);
++
++  ui::ImageModel icon;
++  if (node->is_folder()) {
++    icon = chrome::GetBookmarkFolderIcon(chrome::BookmarkFolderIconType::kNormal,
++                                         kColorBookmarkFolderIcon);
++  } else {
++    const gfx::Image& favicon = model_->GetFavicon(node);
++    icon = favicon.IsEmpty()
++               ? favicon::GetDefaultFaviconModel(kColorBookmarkBarBackground)
++               : ui::ImageModel::FromImage(favicon);
++  }
++  button->SetImageModel(views::Button::STATE_NORMAL, icon);
++  return button;
++}
++
++void BookmarkSidebarView::UpdateButtons() {
++  const int button_width =
++      GetCurrentWidth() - kSeparatorThickness - 2 * kStripPadding;
++  for (const Entry& entry : entries_) {
++    entry.button->SetText(expanded_ ? entry.title : std::u16string());
++    entry.button->SetPreferredSize(gfx::Size(button_width, kButtonHeight));
++  }
++}
++
++void BookmarkSidebarView::OnPrefChanged() {
++  // The separator goes on the edge that faces the page.
++  const bool right = IsRightAligned();
++  SetBorder(views::CreateSolidSidedBorder(
++      gfx::Insets::TLBR(0, right ? kSeparatorThickness : 0, 0,
++                        right ? 0 : kSeparatorThickness),
++      kColorToolbarSeparator));
++
++  if (expanded_ &&
++      !GetPrefs(browser_)->GetBoolean(
++          prefs::kHeliumBookmarkSidebarExpandOnHover)) {
++    SetExpanded(false);
++  }
++  InvalidateParentLayout();
++}
++
++void BookmarkSidebarView::SetExpanded(bool expanded) {
++  if (expanded_ == expanded) {
++    return;
++  }
++  expanded_ = expanded;
++  UpdateButtons();
++  InvalidateLayout();
++  InvalidateParentLayout();
++}
++
++void BookmarkSidebarView::InvalidateParentLayout() {
++  if (parent()) {
++    parent()->InvalidateLayout();
++  }
++}
++
++void BookmarkSidebarView::OnNodePressed(int64_t node_id,
++                                        const ui::Event& event) {
++  if (!model_) {
++    return;
++  }
++  const bookmarks::BookmarkNode* node =
++      bookmarks::GetBookmarkNodeByID(model_, node_id);
++  if (!node) {
++    return;
++  }
++  if (node->is_folder()) {
++    for (const Entry& entry : entries_) {
++      if (entry.node_id == node_id) {
++        ShowFolderMenu(entry.button, node);
++        break;
++      }
++    }
++    return;
++  }
++  OpenNode(node, event.flags());
++}
++
++void BookmarkSidebarView::OpenNode(const bookmarks::BookmarkNode* node,
++                                   int event_flags) {
++  if (!node->is_url()) {
++    return;
++  }
++  browser_->OpenURL(
++      content::OpenURLParams(node->url(), content::Referrer(),
++                             ui::DispositionFromEventFlags(event_flags),
++                             ui::PAGE_TRANSITION_AUTO_BOOKMARK,
++                             /*is_renderer_initiated=*/false),
++      /*navigation_handle_callback=*/{});
++}
++
++void BookmarkSidebarView::ShowFolderMenu(
++    views::View* anchor,
++    const bookmarks::BookmarkNode* folder) {
++  menu_runner_.reset();
++  menu_models_.clear();
++  menu_command_to_node_id_.clear();
++  next_menu_command_id_ = 1;
++
++  auto root = std::make_unique<ui::SimpleMenuModel>(this);
++  ui::SimpleMenuModel* root_ptr = root.get();
++  menu_models_.push_back(std::move(root));
++  BuildFolderMenu(root_ptr, folder);
++  if (root_ptr->GetItemCount() == 0) {
++    return;
++  }
++
++  // Open the menu beside the strip, on the side that faces the page.
++  const bool right = IsRightAligned();
++  const gfx::Rect anchor_bounds = anchor->GetBoundsInScreen();
++  const gfx::Rect menu_anchor(right ? anchor_bounds.x() : anchor_bounds.right(),
++                              anchor_bounds.y(), 0, 0);
++  menu_runner_ = std::make_unique<views::MenuRunner>(
++      root_ptr, /*run_types=*/0,
++      base::BindRepeating(
++          [](BookmarkSidebarView* self) {
++            if (!self->IsMouseHovered()) {
++              self->SetExpanded(false);
++            }
++          },
++          base::Unretained(this)));
++  menu_runner_->RunMenuAt(GetWidget(), nullptr, menu_anchor,
++                          right ? views::MenuAnchorPosition::kTopRight
++                                : views::MenuAnchorPosition::kTopLeft,
++                          ui::mojom::MenuSourceType::kMouse);
++}
++
++void BookmarkSidebarView::BuildFolderMenu(
++    ui::SimpleMenuModel* menu,
++    const bookmarks::BookmarkNode* folder) {
++  for (const auto& child : folder->children()) {
++    if (child->is_folder()) {
++      auto submenu = std::make_unique<ui::SimpleMenuModel>(this);
++      ui::SimpleMenuModel* submenu_ptr = submenu.get();
++      menu_models_.push_back(std::move(submenu));
++      BuildFolderMenu(submenu_ptr, child.get());
++      if (submenu_ptr->GetItemCount() > 0) {
++        menu->AddSubMenu(next_menu_command_id_++, child->GetTitle(),
++                         submenu_ptr);
++      }
++    } else {
++      const int command_id = next_menu_command_id_++;
++      menu_command_to_node_id_[command_id] = child->id();
++      menu->AddItem(command_id, GetNodeTitle(child.get()));
++    }
++  }
++}
++
++BEGIN_METADATA(BookmarkSidebarView)
++END_METADATA
