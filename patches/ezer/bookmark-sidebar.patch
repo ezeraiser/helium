@@ -242,7 +242,7 @@
  #include "chrome/browser/ui/views/frame/browser_view.h"
  #include "chrome/browser/ui/views/frame/custom_corners.h"
  #include "chrome/browser/ui/views/frame/custom_corners_background.h"
-@@ -1385,6 +1386,36 @@
+@@ -1385,6 +1386,37 @@
    CHECK(IsParentedToAndVisible(views().multi_contents_view,
                                 views().browser_view));
  
@@ -261,8 +261,9 @@
 +          views().bookmark_sidebar->IsRightAligned();
 +      const int reserved_width = std::min(BookmarkSidebarView::kCollapsedWidth,
 +                                          params.visual_client_area.width());
-+      const int current_width =
-+          std::max(reserved_width, views().bookmark_sidebar->GetCurrentWidth());
++      const int current_width = std::min(
++          params.visual_client_area.width(),
++          std::max(reserved_width, views().bookmark_sidebar->GetCurrentWidth()));
 +      bookmark_sidebar_bounds =
 +          gfx::Rect(bookmark_sidebar_right
 +                        ? params.visual_client_area.right() - current_width
@@ -340,7 +341,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,162 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -361,6 +362,7 @@
 +#include "components/bookmarks/browser/bookmark_model_observer.h"
 +#include "components/prefs/pref_change_registrar.h"
 +#include "ui/base/metadata/metadata_header_macros.h"
++#include "ui/base/models/image_model.h"
 +#include "ui/base/mojom/menu_source_type.mojom-forward.h"
 +#include "ui/menus/simple_menu_model.h"
 +#include "ui/views/context_menu_controller.h"
@@ -465,6 +467,8 @@
 +  // Re-applies the collapsed/expanded look (label text, button size) to all
 +  // buttons.
 +  void UpdateButtons();
++  // Icon for `node`: its favicon (or the default one) or the folder glyph.
++  ui::ImageModel GetIcon(const bookmarks::BookmarkNode* node) const;
 +
 +  // Reacts to any of the sidebar prefs changing.
 +  void OnPrefChanged();
@@ -502,7 +506,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,488 @@
+@@ -0,0 +1,505 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -560,7 +564,7 @@
 +
 +constexpr int kButtonIconPadding = 8;
 +constexpr int kButtonHeight = 16 + 2 * kButtonIconPadding;
-+constexpr int kStripPadding = 4;
++constexpr int kStripPadding = 3;
 +constexpr int kButtonSpacing = 2;
 +// Thickness of the separator drawn on the edge that faces the page.
 +constexpr int kSeparatorThickness = 1;
@@ -603,6 +607,10 @@
 +  contents->SetInsideBorderInsets(gfx::Insets(kStripPadding));
 +  contents->SetBetweenChildSpacing(kButtonSpacing);
 +  contents_ = scroll_view_->SetContents(std::move(contents));
++
++  set_context_menu_controller(this);
++  scroll_view_->set_context_menu_controller(this);
++  contents_->set_context_menu_controller(this);
 +
 +  model_ = BookmarkModelFactory::GetForBrowserContext(browser_->profile());
 +  if (model_) {
@@ -708,7 +716,14 @@
 +
 +void BookmarkSidebarView::BookmarkNodeFaviconChanged(
 +    const bookmarks::BookmarkNode* node) {
-+  Rebuild();
++  // Favicons load one by one at startup; rebuilding every button for each of
++  // them would be quadratic and would keep destroying the hovered button.
++  for (const Entry& entry : entries_) {
++    if (entry.node_id == node->id()) {
++      entry.button->SetImageModel(views::Button::STATE_NORMAL, GetIcon(node));
++      return;
++    }
++  }
 +}
 +
 +void BookmarkSidebarView::BookmarkNodeChildrenReordered(
@@ -842,18 +857,20 @@
 +  button->SetTooltipText(GetNodeTitle(node));
 +  button->set_context_menu_controller(this);
 +
-+  ui::ImageModel icon;
-+  if (node->is_folder()) {
-+    icon = chrome::GetBookmarkFolderIcon(chrome::BookmarkFolderIconType::kNormal,
-+                                         kColorBookmarkFolderIcon);
-+  } else {
-+    const gfx::Image& favicon = model_->GetFavicon(node);
-+    icon = favicon.IsEmpty()
-+               ? favicon::GetDefaultFaviconModel(kColorBookmarkBarBackground)
-+               : ui::ImageModel::FromImage(favicon);
-+  }
-+  button->SetImageModel(views::Button::STATE_NORMAL, icon);
++  button->SetImageModel(views::Button::STATE_NORMAL, GetIcon(node));
 +  return button;
++}
++
++ui::ImageModel BookmarkSidebarView::GetIcon(
++    const bookmarks::BookmarkNode* node) const {
++  if (node->is_folder()) {
++    return chrome::GetBookmarkFolderIcon(
++        chrome::BookmarkFolderIconType::kNormal, kColorBookmarkFolderIcon);
++  }
++  const gfx::Image& favicon = model_->GetFavicon(node);
++  return favicon.IsEmpty()
++             ? favicon::GetDefaultFaviconModel(kColorBookmarkBarBackground)
++             : ui::ImageModel::FromImage(favicon);
 +}
 +
 +void BookmarkSidebarView::UpdateButtons() {
@@ -873,9 +890,13 @@
 +                        right ? 0 : kSeparatorThickness),
 +      kColorToolbarSeparator));
 +
++  // A hidden view receives no mouse-exit, so without this it would reappear
++  // still expanded (and overlaying the page) the next time it is shown.
 +  if (expanded_ &&
-+      !GetPrefs(browser_)->GetBoolean(
-+          prefs::kHeliumBookmarkSidebarExpandOnHover)) {
++      (!ShouldShow() ||
++       !GetPrefs(browser_)->GetBoolean(
++           prefs::kHeliumBookmarkSidebarExpandOnHover))) {
++    expand_timer_.Stop();
 +    SetExpanded(false);
 +  }
 +  InvalidateParentLayout();
