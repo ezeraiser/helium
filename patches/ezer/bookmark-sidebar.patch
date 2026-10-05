@@ -396,7 +396,7 @@
    organizer_panel_container_ = nullptr;
    side_panel_ = nullptr;
  
-@@ -5822,6 +5829,7 @@
+@@ -5820,6 +5827,7 @@
    layout_views.vertical_tab_strip_region_view = vertical_tab_strip_region_view_;
    layout_views.vertical_tab_strip_background_blur_backdrop =
        vertical_tab_strip_background_blur_backdrop_;
