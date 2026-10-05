@@ -1369,6 +1369,60 @@
     "message": "Remove separator"
   },
   {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that shrinks the memory used by tabs that have been inactive for a while, without reloading them.",
+    "message": "Free memory of inactive tabs"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that shrinks the memory used by inactive tabs.",
+    "message": "Shrinks the memory used by tabs you have not looked at for a while. The pages stay exactly as they are and are not reloaded, but switching back to one can take a moment longer. Tabs that play audio or video are not affected."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the drop-down that sets how long a tab must be inactive before its memory is shrunk.",
+    "message": "Wait before freeing memory"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_SECONDS",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 5 seconds.",
+    "message": "5 seconds"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_10_SECONDS",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 10 seconds.",
+    "message": "10 seconds"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_30_SECONDS",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 30 seconds.",
+    "message": "30 seconds"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_1_MINUTE",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 1 minute.",
+    "message": "1 minute"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_2_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 2 minutes.",
+    "message": "2 minutes"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wait 5 minutes.",
+    "message": "5 minutes"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

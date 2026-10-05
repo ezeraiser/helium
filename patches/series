@@ -370,3 +370,4 @@ ezer/vertical-tab-strip-collapse-settings.patch
 ezer/bookmark-sidebar.patch
 ezer/disable-crashpad-engine.patch
 ezer/v8-regexp-special-case-root-locale.patch
+ezer/background-tab-memory-trim.patch

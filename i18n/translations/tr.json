@@ -1468,5 +1468,50 @@
     "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR",
     "source": "Remove separator",
     "message": "Ayracı kaldır"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_LABEL",
+    "source": "Free memory of inactive tabs",
+    "message": "Etkin olmayan sekmelerin belleğini boşalt"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DESCRIPTION",
+    "source": "Shrinks the memory used by tabs you have not looked at for a while. The pages stay exactly as they are and are not reloaded, but switching back to one can take a moment longer. Tabs that play audio or video are not affected.",
+    "message": "Bir süredir bakmadığın sekmelerin kapladığı belleği küçültür. Sayfalar olduğu gibi kalır ve yeniden yüklenmez, ancak bir sekmeye dönmek biraz daha uzun sürebilir. Ses veya video oynatan sekmeler etkilenmez."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL",
+    "source": "Wait before freeing memory",
+    "message": "Belleği boşaltmadan önce bekle"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_SECONDS",
+    "source": "5 seconds",
+    "message": "5 saniye"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_10_SECONDS",
+    "source": "10 seconds",
+    "message": "10 saniye"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_30_SECONDS",
+    "source": "30 seconds",
+    "message": "30 saniye"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_1_MINUTE",
+    "source": "1 minute",
+    "message": "1 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_2_MINUTES",
+    "source": "2 minutes",
+    "message": "2 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES",
+    "source": "5 minutes",
+    "message": "5 dakika"
   }
 ]
