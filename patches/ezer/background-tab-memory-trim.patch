@@ -86,7 +86,7 @@
        base::FeatureList::IsEnabled(features::kWebContentsDiscard);
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.h
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,121 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -175,6 +175,12 @@
 +  // Reads the prefs and re-evaluates.
 +  void OnPrefChanged();
 +
++  // Drops the state of every process that is no longer a candidate (it became
++  // visible, audible, ...). Done right away, not through the coalescing delay,
++  // so that a tab that was shown only briefly is trimmed again when it is
++  // hidden again instead of being remembered as "already trimmed".
++  void ForgetResumedProcesses();
++
 +  // Coalesces bursts of graph events into a single Evaluate().
 +  void ScheduleEvaluate();
 +
@@ -204,7 +210,7 @@
 +#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_BACKGROUND_TAB_TRIM_POLICY_H_
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.cc
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,249 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -278,15 +284,18 @@
 +}
 +
 +void BackgroundTabTrimPolicy::OnIsVisibleChanged(const PageNode* page_node) {
++  ForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
 +void BackgroundTabTrimPolicy::OnIsAudibleChanged(const PageNode* page_node) {
++  ForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
 +void BackgroundTabTrimPolicy::OnHasPictureInPictureChanged(
 +    const PageNode* page_node) {
++  ForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
@@ -328,6 +337,16 @@
 +void BackgroundTabTrimPolicy::OnPrefChanged() {
 +  ReadPrefs();
 +  Evaluate();
++}
++
++void BackgroundTabTrimPolicy::ForgetResumedProcesses() {
++  for (auto it = states_.begin(); it != states_.end();) {
++    if (IsTrimCandidate(it->first)) {
++      ++it;
++    } else {
++      it = states_.erase(it);
++    }
++  }
 +}
 +
 +void BackgroundTabTrimPolicy::ScheduleEvaluate() {
