@@ -374,3 +374,4 @@ ezer/disable-crashpad-engine.patch
 ezer/v8-regexp-special-case-root-locale.patch
 ezer/background-tab-memory-trim.patch
 ezer/lpac-acls-oem-codepage.patch
+ezer/midl-no-placeholder-in-source.patch
