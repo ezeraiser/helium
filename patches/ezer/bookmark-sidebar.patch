@@ -1,18 +1,19 @@
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -644,6 +644,26 @@
+@@ -643,6 +643,26 @@
+ // collapsed vertical tab strip before it expands.
  inline constexpr char kHeliumVerticalExpandOnHoverDelayMs[] =
      "helium.browser.vertical_expand_on_hover_delay_ms";
- 
++
 +// A boolean pref set to true if the bookmark sidebar (an icon strip showing
 +// the bookmark bar's items along a window edge) should be shown.
 +inline constexpr char kHeliumBookmarkSidebarVisible[] =
 +    "helium.browser.bookmark_sidebar.visible";
 +
-+// A boolean pref set to true if the bookmark sidebar should be on the right
-+// side of the window instead of the left.
-+inline constexpr char kHeliumBookmarkSidebarRightAligned[] =
-+    "helium.browser.bookmark_sidebar.right_aligned";
++// An integer pref for which window edge the bookmark sidebar is docked to:
++// 0 = left, 1 = right, 2 = top, 3 = bottom. Out-of-range values mean left.
++inline constexpr char kHeliumBookmarkSidebarPosition[] =
++    "helium.browser.bookmark_sidebar.position";
 +
 +// A boolean pref set to true if the bookmark sidebar should expand to show
 +// bookmark titles while the mouse hovers over it.
@@ -23,19 +24,17 @@
 +// bookmark sidebar before it expands.
 +inline constexpr char kHeliumBookmarkSidebarExpandDelayMs[] =
 +    "helium.browser.bookmark_sidebar.expand_delay_ms";
-+
+ 
  // A boolean pref set to true if zen mode is enabled.
  inline constexpr char kHeliumZenMode[] = "helium.browser.zen_mode";
- 
 --- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
 +++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
-@@ -35,6 +35,13 @@
+@@ -35,6 +35,12 @@
    registry->RegisterBooleanPref(prefs::kHeliumVerticalExpandOnHover, false);
    registry->RegisterIntegerPref(prefs::kHeliumVerticalExpandOnHoverDelayMs,
                                  100);
 +  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarVisible, false);
-+  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarRightAligned,
-+                                false);
++  registry->RegisterIntegerPref(prefs::kHeliumBookmarkSidebarPosition, 0);
 +  registry->RegisterBooleanPref(prefs::kHeliumBookmarkSidebarExpandOnHover,
 +                                true);
 +  registry->RegisterIntegerPref(prefs::kHeliumBookmarkSidebarExpandDelayMs,
@@ -51,8 +50,8 @@
        settings_api::PrefType::kNumber;
 +  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarVisible] =
 +      settings_api::PrefType::kBoolean;
-+  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarRightAligned] =
-+      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarPosition] =
++      settings_api::PrefType::kNumber;
 +  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarExpandOnHover] =
 +      settings_api::PrefType::kBoolean;
 +  (*s_allowlist)[::prefs::kHeliumBookmarkSidebarExpandDelayMs] =
@@ -62,30 +61,50 @@
  
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -322,6 +322,15 @@
+@@ -320,6 +320,27 @@
+     </message>
      <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
        Delay
-     </message>
++    </message>
 +    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW" desc="Label for the toggle that shows the bookmark sidebar, an icon-only strip of the user's bookmarks docked to a window edge.">
 +      Show bookmark sidebar
 +    </message>
-+    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN" desc="Label for the toggle that moves the bookmark sidebar to the right side of the window.">
-+      Show bookmark sidebar on the right
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION" desc="Label for the drop-down that chooses which window edge the bookmark sidebar is docked to.">
++      Bookmark sidebar position
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_LEFT" desc="Drop-down option and menu item that docks the bookmark sidebar to the left edge of the window.">
++      Left
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_RIGHT" desc="Drop-down option and menu item that docks the bookmark sidebar to the right edge of the window.">
++      Right
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_TOP" desc="Drop-down option and menu item that docks the bookmark sidebar to the top edge of the page area.">
++      Top
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_BOTTOM" desc="Drop-down option and menu item that docks the bookmark sidebar to the bottom edge of the window.">
++      Bottom
 +    </message>
 +    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER" desc="Label for the toggle that makes the icon-only bookmark sidebar expand to show bookmark titles when hovered.">
 +      Expand bookmark sidebar on hover
-+    </message>
+     </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
-     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -611,6 +611,10 @@
+@@ -611,6 +611,18 @@
         IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON},
        {"verticalTabsExpandOnHoverDelay",
         IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY},
 +      {"bookmarkSidebarShow", IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW},
-+      {"bookmarkSidebarRightAlign", IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN},
++      {"bookmarkSidebarPosition", IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION},
++      {"bookmarkSidebarPositionLeft",
++       IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_LEFT},
++      {"bookmarkSidebarPositionRight",
++       IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_RIGHT},
++      {"bookmarkSidebarPositionTop",
++       IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_TOP},
++      {"bookmarkSidebarPositionBottom",
++       IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_BOTTOM},
 +      {"bookmarkSidebarExpandOnHover",
 +       IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER},
        {"browserZenMode", IDS_SETTINGS_BROWSER_ZEN_MODE},
@@ -102,18 +121,41 @@
  
        // <if expr="is_linux">
        themeSystemThemePref_: {type: Object},
-@@ -230,6 +232,10 @@
+@@ -190,6 +192,7 @@
+       sidePanelAlignmentOptions_: {type: Array},
+       configurableSidePanels_: {type: Array},
+       expandOnHoverDelayOptions_: {type: Array},
++      bookmarkSidebarPositionOptions_: {type: Array},
+     };
+   }
+ 
+@@ -229,6 +232,10 @@
+   protected accessor verticalTabsCollapsedStatePref_: PrefObject<boolean>|
        undefined = undefined;
    protected accessor heliumVerticalExpandOnHoverPref_: PrefObject<boolean>|
-       undefined = undefined;
++      undefined = undefined;
 +  protected accessor bookmarkSidebarVisiblePref_: PrefObject<boolean>|
 +      undefined = undefined;
 +  protected accessor bookmarkSidebarExpandOnHoverPref_: PrefObject<boolean>|
-+      undefined = undefined;
+       undefined = undefined;
  
    // <if expr="is_linux">
-   protected accessor themeSystemThemePref_: PrefObject<number>|undefined =
-@@ -390,6 +396,9 @@
+@@ -305,6 +312,14 @@
+ 
+   // Ezer: values are milliseconds, stored directly in
+   // helium.browser.vertical_expand_on_hover_delay_ms.
++  // Values match the position pref (0 = left, 1 = right, 2 = top, 3 = bottom).
++  protected accessor bookmarkSidebarPositionOptions_: DropdownMenuOptionList = [
++    {value: 0, name: loadTimeData.getString('bookmarkSidebarPositionLeft')},
++    {value: 1, name: loadTimeData.getString('bookmarkSidebarPositionRight')},
++    {value: 2, name: loadTimeData.getString('bookmarkSidebarPositionTop')},
++    {value: 3, name: loadTimeData.getString('bookmarkSidebarPositionBottom')},
++  ];
++
+   protected accessor expandOnHoverDelayOptions_: DropdownMenuOptionList = [
+     {value: 0, name: '0 ms'},
+     {value: 100, name: '100 ms'},
+@@ -390,6 +405,9 @@
        'vertical_tabs.collapsed_state': 'verticalTabsCollapsedStatePref_',
        'helium.browser.vertical_expand_on_hover':
            'heliumVerticalExpandOnHoverPref_',
@@ -125,7 +167,7 @@
  
 --- a/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
 +++ b/chrome/browser/resources/settings/appearance_page/appearance_page.html.ts
-@@ -135,6 +135,32 @@
+@@ -135,6 +135,38 @@
            label="$i18n{zenModePinToolbar}">
        </settings-toggle-button>
      </div>
@@ -135,10 +177,16 @@
 +    </settings-toggle-button>
 +    <div class="list-frame indented-toggles"
 +        ?hidden="${!this.bookmarkSidebarVisiblePref_?.value}">
-+      <settings-toggle-button class="hr"
-+          pref-key="helium.browser.bookmark_sidebar.right_aligned"
-+          label="$i18n{bookmarkSidebarRightAlign}">
-+      </settings-toggle-button>
++      <div class="cr-row">
++        <div class="flex cr-padded-text" aria-hidden="true">
++          $i18n{bookmarkSidebarPosition}
++        </div>
++        <settings-dropdown-menu id="bookmarkSidebarPosition"
++            label="$i18n{bookmarkSidebarPosition}"
++            pref-key="helium.browser.bookmark_sidebar.position"
++            .menuOptions="${this.bookmarkSidebarPositionOptions_}">
++        </settings-dropdown-menu>
++      </div>
 +      <settings-toggle-button class="hr"
 +          pref-key="helium.browser.bookmark_sidebar.expand_on_hover"
 +          label="$i18n{bookmarkSidebarExpandOnHover}">
@@ -242,14 +290,15 @@
  #include "chrome/browser/ui/views/frame/browser_view.h"
  #include "chrome/browser/ui/views/frame/custom_corners.h"
  #include "chrome/browser/ui/views/frame/custom_corners_background.h"
-@@ -1385,6 +1386,37 @@
+@@ -1385,6 +1386,48 @@
    CHECK(IsParentedToAndVisible(views().multi_contents_view,
                                 views().browser_view));
  
-+  // Ezer: the bookmark sidebar sits beside the contents, below the top
-+  // container and infobars. Only the collapsed (icon-only) width is reserved
-+  // out of the contents area; while hover-expanded the strip is drawn over the
-+  // page instead of pushing it around.
++  // Ezer: the bookmark sidebar sits beside (left/right) or above/below
++  // (top/bottom) the contents, below the top container and infobars. Only the
++  // collapsed (icon-only) thickness is reserved out of the contents area;
++  // while a left/right strip is hover-expanded it is drawn over the page
++  // instead of pushing it around. A top/bottom strip keeps its height.
 +  if (views().bookmark_sidebar &&
 +      IsParentedTo(views().bookmark_sidebar, views().browser_view)) {
 +    const bool bookmark_sidebar_visible =
@@ -257,21 +306,31 @@
 +        !is_fullscreen(layout_data_->window_state);
 +    gfx::Rect bookmark_sidebar_bounds;
 +    if (bookmark_sidebar_visible) {
-+      const bool bookmark_sidebar_right =
-+          views().bookmark_sidebar->IsRightAligned();
-+      const int reserved_width = std::min(BookmarkSidebarView::kCollapsedWidth,
-+                                          params.visual_client_area.width());
-+      const int current_width = std::min(
-+          params.visual_client_area.width(),
-+          std::max(reserved_width, views().bookmark_sidebar->GetCurrentWidth()));
-+      bookmark_sidebar_bounds =
-+          gfx::Rect(bookmark_sidebar_right
-+                        ? params.visual_client_area.right() - current_width
-+                        : params.visual_client_area.x(),
-+                    params.visual_client_area.y(), current_width,
-+                    params.visual_client_area.height());
-+      params.InsetHorizontal(reserved_width,
-+                             /*leading=*/!bookmark_sidebar_right);
++      const gfx::Rect area = params.visual_client_area;
++      const BookmarkSidebarView::Position position =
++          views().bookmark_sidebar->GetPosition();
++      if (views().bookmark_sidebar->IsHorizontal()) {
++        const int height = std::min(BookmarkSidebarView::kCollapsedThickness,
++                                    area.height());
++        const bool top = position == BookmarkSidebarView::Position::kTop;
++        bookmark_sidebar_bounds = gfx::Rect(
++            area.x(), top ? area.y() : area.bottom() - height, area.width(),
++            height);
++        params.Inset(top ? gfx::Insets::TLBR(height, 0, 0, 0)
++                         : gfx::Insets::TLBR(0, 0, height, 0));
++      } else {
++        const bool right = position == BookmarkSidebarView::Position::kRight;
++        const int reserved_width = std::min(
++            BookmarkSidebarView::kCollapsedThickness, area.width());
++        const int current_width =
++            std::min(area.width(),
++                     std::max(reserved_width,
++                              views().bookmark_sidebar->GetCurrentThickness()));
++        bookmark_sidebar_bounds =
++            gfx::Rect(right ? area.right() - current_width : area.x(),
++                      area.y(), current_width, area.height());
++        params.InsetHorizontal(reserved_width, /*leading=*/!right);
++      }
 +    }
 +    layout.AddChild(views().bookmark_sidebar, bookmark_sidebar_bounds,
 +                    bookmark_sidebar_visible);
@@ -341,7 +400,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,162 @@
+@@ -0,0 +1,177 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -383,11 +442,17 @@
 +class ScrollView;
 +}  // namespace views
 +
-+// Ezer: a slim strip, docked to the left or right edge of the browser window,
-+// that shows the bookmark bar's items as icons (favicons for bookmarks, a
-+// folder glyph for folders) and optionally expands to show titles while the
-+// mouse hovers over it. It is independent of the (horizontal) bookmark bar and
-+// of the vertical tab strip, and is laid out by BrowserViewTabbedLayoutImpl.
++// Ezer: a slim strip, docked to the left, right, top or bottom edge of the
++// page area, that shows the bookmark bar's items as icons (favicons for
++// bookmarks, a folder glyph for folders) and optionally expands to show titles
++// while the mouse hovers over it. It is independent of the (horizontal)
++// bookmark bar and of the vertical tab strip, and is laid out by
++// BrowserViewTabbedLayoutImpl.
++//
++// On the left/right edges the strip is a column that widens when expanded
++// (overlaying the page). On the top/bottom edges it is a row of the same
++// thickness whose buttons grow to show their titles; the row keeps its height
++// and scrolls horizontally when the buttons do not fit.
 +class BookmarkSidebarView : public views::View,
 +                            public bookmarks::BookmarkModelObserver,
 +                            public ui::SimpleMenuModel::Delegate,
@@ -395,9 +460,14 @@
 +  METADATA_HEADER(BookmarkSidebarView, views::View)
 +
 + public:
-+  // Width of the icon-only strip. This is also the width the layout reserves
-+  // for the strip; the hover-expanded state overlays the page content.
-+  static constexpr int kCollapsedWidth = 40;
++  // Which window edge the strip is docked to. Values match the position pref.
++  enum class Position { kLeft = 0, kRight = 1, kTop = 2, kBottom = 3 };
++
++  // Thickness (width for a left/right strip, height for a top/bottom one) of
++  // the icon-only strip. This is also what the layout reserves for the strip;
++  // the hover-expanded state of a side strip overlays the page content.
++  static constexpr int kCollapsedThickness = 40;
++  // Width of a left/right strip while hover-expanded.
 +  static constexpr int kExpandedWidth = 240;
 +
 +  explicit BookmarkSidebarView(Browser* browser);
@@ -407,11 +477,14 @@
 +
 +  // Whether the user has the sidebar turned on.
 +  bool ShouldShow() const;
-+  bool IsRightAligned() const;
++  Position GetPosition() const;
++  // True for the top/bottom positions, where the buttons run in a row.
++  bool IsHorizontal() const;
 +  bool IsExpanded() const { return expanded_; }
 +
-+  // Width the strip currently wants to occupy (>= kCollapsedWidth).
-+  int GetCurrentWidth() const;
++  // Thickness the strip currently wants to occupy (>= kCollapsedThickness).
++  // Only a left/right strip gets thicker (wider) when expanded.
++  int GetCurrentThickness() const;
 +
 +  // Toggles the visibility pref; used by the keyboard shortcut / menus.
 +  void ToggleVisibility();
@@ -419,6 +492,7 @@
 +  // views::View:
 +  void OnMouseEntered(const ui::MouseEvent& event) override;
 +  void OnMouseExited(const ui::MouseEvent& event) override;
++  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
 +
 +  // bookmarks::BookmarkModelObserver:
 +  void BookmarkModelLoaded(bool ids_reassigned) override;
@@ -506,13 +580,15 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,505 @@
+@@ -0,0 +1,623 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +#include "chrome/browser/ui/views/frame/bookmark_sidebar_view.h"
 +
++#include <algorithm>
++#include <optional>
 +#include <string>
 +#include <utility>
 +
@@ -548,6 +624,7 @@
 +#include "ui/views/background.h"
 +#include "ui/views/border.h"
 +#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/scrollbar/scroll_bar.h"
 +#include "ui/views/controls/scroll_view.h"
 +#include "ui/views/layout/box_layout.h"
 +#include "ui/views/layout/box_layout_view.h"
@@ -559,12 +636,18 @@
 +// Command ids of the right-click menu. These live far above the ids handed out
 +// to folder-menu entries (which count up from 1).
 +constexpr int kCommandShowSidebar = 1000001;
-+constexpr int kCommandRightAligned = 1000002;
-+constexpr int kCommandExpandOnHover = 1000003;
++constexpr int kCommandExpandOnHover = 1000002;
++// One radio item per BookmarkSidebarView::Position; the position is added to
++// this base.
++constexpr int kCommandPositionBase = 1000010;
++constexpr int kCommandPositionSubmenu = 1000020;
++constexpr int kPositionRadioGroup = 1;
 +
 +constexpr int kButtonIconPadding = 8;
 +constexpr int kButtonHeight = 16 + 2 * kButtonIconPadding;
 +constexpr int kStripPadding = 3;
++// Widest a button of a top/bottom strip gets while its title is shown.
++constexpr int kMaxHorizontalButtonWidth = 200;
 +constexpr int kButtonSpacing = 2;
 +// Thickness of the separator drawn on the edge that faces the page.
 +constexpr int kSeparatorThickness = 1;
@@ -595,10 +678,8 @@
 +  scroll_view_ = AddChildView(std::make_unique<views::ScrollView>());
 +  scroll_view_->SetBackgroundColor(std::nullopt);
 +  scroll_view_->SetDrawOverflowIndicator(false);
-+  scroll_view_->SetHorizontalScrollBarMode(
-+      views::ScrollView::ScrollBarMode::kDisabled);
-+  scroll_view_->SetVerticalScrollBarMode(
-+      views::ScrollView::ScrollBarMode::kHiddenButEnabled);
++  // The scroll bar modes and the contents orientation depend on the position;
++  // OnPrefChanged() below sets them.
 +
 +  auto contents = std::make_unique<views::BoxLayoutView>();
 +  contents->SetOrientation(views::BoxLayout::Orientation::kVertical);
@@ -619,7 +700,7 @@
 +
 +  pref_change_registrar_.Init(GetPrefs(browser_));
 +  for (const char* pref : {prefs::kHeliumBookmarkSidebarVisible,
-+                           prefs::kHeliumBookmarkSidebarRightAligned,
++                           prefs::kHeliumBookmarkSidebarPosition,
 +                           prefs::kHeliumBookmarkSidebarExpandOnHover}) {
 +    pref_change_registrar_.Add(
 +        pref, base::BindRepeating(&BookmarkSidebarView::OnPrefChanged,
@@ -636,13 +717,27 @@
 +  return GetPrefs(browser_)->GetBoolean(prefs::kHeliumBookmarkSidebarVisible);
 +}
 +
-+bool BookmarkSidebarView::IsRightAligned() const {
-+  return GetPrefs(browser_)->GetBoolean(
-+      prefs::kHeliumBookmarkSidebarRightAligned);
++BookmarkSidebarView::Position BookmarkSidebarView::GetPosition() const {
++  switch (
++      GetPrefs(browser_)->GetInteger(prefs::kHeliumBookmarkSidebarPosition)) {
++    case static_cast<int>(Position::kRight):
++      return Position::kRight;
++    case static_cast<int>(Position::kTop):
++      return Position::kTop;
++    case static_cast<int>(Position::kBottom):
++      return Position::kBottom;
++    default:
++      return Position::kLeft;
++  }
 +}
 +
-+int BookmarkSidebarView::GetCurrentWidth() const {
-+  return expanded_ ? kExpandedWidth : kCollapsedWidth;
++bool BookmarkSidebarView::IsHorizontal() const {
++  const Position position = GetPosition();
++  return position == Position::kTop || position == Position::kBottom;
++}
++
++int BookmarkSidebarView::GetCurrentThickness() const {
++  return expanded_ && !IsHorizontal() ? kExpandedWidth : kCollapsedThickness;
 +}
 +
 +void BookmarkSidebarView::ToggleVisibility() {
@@ -673,6 +768,19 @@
 +    return;
 +  }
 +  SetExpanded(false);
++}
++
++bool BookmarkSidebarView::OnMouseWheel(const ui::MouseWheelEvent& event) {
++  // A row of buttons has nothing to scroll vertically, so let the plain wheel
++  // scroll it sideways.
++  if (!IsHorizontal() || event.y_offset() == 0 || event.x_offset() != 0) {
++    return false;
++  }
++  views::ScrollBar* scroll_bar = scroll_view_->horizontal_scroll_bar();
++  return scroll_bar &&
++         scroll_bar->ScrollByAmount(
++             event.y_offset() > 0 ? views::ScrollBar::ScrollAmount::kPrevLine
++                                  : views::ScrollBar::ScrollAmount::kNextLine);
 +}
 +
 +void BookmarkSidebarView::BookmarkModelLoaded(bool ids_reassigned) {
@@ -741,12 +849,15 @@
 +  switch (command_id) {
 +    case kCommandShowSidebar:
 +      return ShouldShow();
-+    case kCommandRightAligned:
-+      return IsRightAligned();
 +    case kCommandExpandOnHover:
 +      return GetPrefs(browser_)->GetBoolean(
 +          prefs::kHeliumBookmarkSidebarExpandOnHover);
 +    default:
++      if (command_id >= kCommandPositionBase &&
++          command_id < kCommandPositionBase + 4) {
++        return command_id - kCommandPositionBase ==
++               static_cast<int>(GetPosition());
++      }
 +      return false;
 +  }
 +}
@@ -757,10 +868,6 @@
 +    case kCommandShowSidebar:
 +      ToggleVisibility();
 +      return;
-+    case kCommandRightAligned:
-+      prefs->SetBoolean(prefs::kHeliumBookmarkSidebarRightAligned,
-+                        !IsRightAligned());
-+      return;
 +    case kCommandExpandOnHover:
 +      prefs->SetBoolean(
 +          prefs::kHeliumBookmarkSidebarExpandOnHover,
@@ -768,6 +875,13 @@
 +      return;
 +    default:
 +      break;
++  }
++
++  if (command_id >= kCommandPositionBase &&
++      command_id < kCommandPositionBase + 4) {
++    prefs->SetInteger(prefs::kHeliumBookmarkSidebarPosition,
++                      command_id - kCommandPositionBase);
++    return;
 +  }
 +
 +  auto it = menu_command_to_node_id_.find(command_id);
@@ -793,11 +907,33 @@
 +      kCommandShowSidebar,
 +      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW));
 +  menu->AddCheckItem(
-+      kCommandRightAligned,
-+      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN));
-+  menu->AddCheckItem(
 +      kCommandExpandOnHover,
 +      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER));
++
++  auto position_menu = std::make_unique<ui::SimpleMenuModel>(this);
++  position_menu->AddRadioItem(
++      kCommandPositionBase + static_cast<int>(Position::kLeft),
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_LEFT),
++      kPositionRadioGroup);
++  position_menu->AddRadioItem(
++      kCommandPositionBase + static_cast<int>(Position::kRight),
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_RIGHT),
++      kPositionRadioGroup);
++  position_menu->AddRadioItem(
++      kCommandPositionBase + static_cast<int>(Position::kTop),
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_TOP),
++      kPositionRadioGroup);
++  position_menu->AddRadioItem(
++      kCommandPositionBase + static_cast<int>(Position::kBottom),
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_BOTTOM),
++      kPositionRadioGroup);
++  ui::SimpleMenuModel* position_menu_ptr = position_menu.get();
++  menu_models_.push_back(std::move(position_menu));
++  menu->AddSubMenu(
++      kCommandPositionSubmenu,
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION),
++      position_menu_ptr);
++
 +  ui::SimpleMenuModel* menu_ptr = menu.get();
 +  menu_models_.push_back(std::move(menu));
 +
@@ -874,21 +1010,61 @@
 +}
 +
 +void BookmarkSidebarView::UpdateButtons() {
-+  const int button_width =
-+      GetCurrentWidth() - kSeparatorThickness - 2 * kStripPadding;
++  const bool horizontal = IsHorizontal();
++  // Extent across the strip, which is fixed: all buttons of a column share the
++  // strip's width, all buttons of a row its height.
++  const int cross_size =
++      GetCurrentThickness() - kSeparatorThickness - 2 * kStripPadding;
 +  for (const Entry& entry : entries_) {
-+    entry.button->SetText(expanded_ ? entry.title : std::u16string());
-+    entry.button->SetPreferredSize(gfx::Size(button_width, kButtonHeight));
++    views::LabelButton* button = entry.button;
++    button->SetText(expanded_ ? entry.title : std::u16string());
++    if (!horizontal) {
++      button->SetPreferredSize(gfx::Size(cross_size, kButtonHeight));
++      continue;
++    }
++    // A button of a row is as wide as its content, capped; collapsed it is
++    // just the icon.
++    int width = kButtonHeight;
++    if (expanded_) {
++      button->SetPreferredSize(std::nullopt);
++      width = std::min(button->GetPreferredSize().width(),
++                       kMaxHorizontalButtonWidth);
++    }
++    button->SetPreferredSize(gfx::Size(width, cross_size));
 +  }
 +}
 +
 +void BookmarkSidebarView::OnPrefChanged() {
 +  // The separator goes on the edge that faces the page.
-+  const bool right = IsRightAligned();
-+  SetBorder(views::CreateSolidSidedBorder(
-+      gfx::Insets::TLBR(0, right ? kSeparatorThickness : 0, 0,
-+                        right ? 0 : kSeparatorThickness),
-+      kColorToolbarSeparator));
++  const bool horizontal = IsHorizontal();
++  gfx::Insets separator;
++  switch (GetPosition()) {
++    case Position::kLeft:
++      separator = gfx::Insets::TLBR(0, 0, 0, kSeparatorThickness);
++      break;
++    case Position::kRight:
++      separator = gfx::Insets::TLBR(0, kSeparatorThickness, 0, 0);
++      break;
++    case Position::kTop:
++      separator = gfx::Insets::TLBR(0, 0, kSeparatorThickness, 0);
++      break;
++    case Position::kBottom:
++      separator = gfx::Insets::TLBR(kSeparatorThickness, 0, 0, 0);
++      break;
++  }
++  SetBorder(views::CreateSolidSidedBorder(separator, kColorToolbarSeparator));
++
++  // Buttons run down a left/right strip and along a top/bottom one.
++  contents_->SetOrientation(horizontal
++                                ? views::BoxLayout::Orientation::kHorizontal
++                                : views::BoxLayout::Orientation::kVertical);
++  scroll_view_->SetHorizontalScrollBarMode(
++      horizontal ? views::ScrollView::ScrollBarMode::kHiddenButEnabled
++                 : views::ScrollView::ScrollBarMode::kDisabled);
++  scroll_view_->SetVerticalScrollBarMode(
++      horizontal ? views::ScrollView::ScrollBarMode::kDisabled
++                 : views::ScrollView::ScrollBarMode::kHiddenButEnabled);
++  UpdateButtons();
 +
 +  // A hidden view receives no mouse-exit, so without this it would reappear
 +  // still expanded (and overlaying the page) the next time it is shown.
@@ -969,11 +1145,29 @@
 +    return;
 +  }
 +
-+  // Open the menu beside the strip, on the side that faces the page.
-+  const bool right = IsRightAligned();
++  // Open the menu next to the button, on the side that faces the page.
 +  const gfx::Rect anchor_bounds = anchor->GetBoundsInScreen();
-+  const gfx::Rect menu_anchor(right ? anchor_bounds.x() : anchor_bounds.right(),
-+                              anchor_bounds.y(), 0, 0);
++  gfx::Point anchor_point;
++  views::MenuAnchorPosition anchor_position;
++  switch (GetPosition()) {
++    case Position::kRight:
++      anchor_point = anchor_bounds.origin();
++      anchor_position = views::MenuAnchorPosition::kTopRight;
++      break;
++    case Position::kTop:
++      anchor_point = anchor_bounds.bottom_left();
++      anchor_position = views::MenuAnchorPosition::kTopLeft;
++      break;
++    case Position::kBottom:
++      anchor_point = anchor_bounds.origin();
++      anchor_position = views::MenuAnchorPosition::kBottomCenter;
++      break;
++    case Position::kLeft:
++      anchor_point = anchor_bounds.top_right();
++      anchor_position = views::MenuAnchorPosition::kTopLeft;
++      break;
++  }
++  const gfx::Rect menu_anchor(anchor_point, gfx::Size());
 +  menu_runner_ = std::make_unique<views::MenuRunner>(
 +      root_ptr, /*run_types=*/0,
 +      base::BindRepeating(
@@ -983,9 +1177,7 @@
 +            }
 +          },
 +          base::Unretained(this)));
-+  menu_runner_->RunMenuAt(GetWidget(), nullptr, menu_anchor,
-+                          right ? views::MenuAnchorPosition::kTopRight
-+                                : views::MenuAnchorPosition::kTopLeft,
++  menu_runner_->RunMenuAt(GetWidget(), nullptr, menu_anchor, anchor_position,
 +                          ui::mojom::MenuSourceType::kMouse);
 +}
 +

@@ -1321,10 +1321,34 @@
     "message": "Show bookmark sidebar"
   },
   {
-    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_RIGHT_ALIGN",
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION",
     "source": "chrome/app/settings_strings.grdp",
-    "context": "Label for the toggle that moves the bookmark sidebar to the right side of the window.",
-    "message": "Show bookmark sidebar on the right"
+    "context": "Label for the drop-down that chooses which window edge the bookmark sidebar is docked to.",
+    "message": "Bookmark sidebar position"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_LEFT",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option and menu item that docks the bookmark sidebar to the left edge of the window.",
+    "message": "Left"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_RIGHT",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option and menu item that docks the bookmark sidebar to the right edge of the window.",
+    "message": "Right"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_TOP",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option and menu item that docks the bookmark sidebar to the top edge of the page area.",
+    "message": "Top"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_BOTTOM",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option and menu item that docks the bookmark sidebar to the bottom edge of the window.",
+    "message": "Bottom"
   },
   {
     "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER",
