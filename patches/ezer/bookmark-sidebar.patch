@@ -61,7 +61,7 @@
  
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -320,6 +320,33 @@
+@@ -321,6 +321,33 @@
      </message>
      <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
        Delay
