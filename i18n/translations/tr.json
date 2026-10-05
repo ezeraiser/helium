@@ -1513,5 +1513,25 @@
     "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES",
     "source": "5 minutes",
     "message": "5 dakika"
+  },
+  {
+    "name": "IDS_TAB_CXMENU_SOUND_MUTE_TAB",
+    "source": "{NUM_TABS, plural, =1 {Mute tab} other {Mute tabs}}",
+    "message": "{NUM_TABS, plural, =1 {Sekmeyi sessize al} other {Sekmeleri sessize al}}"
+  },
+  {
+    "name": "IDS_TAB_CXMENU_SOUND_UNMUTE_TAB",
+    "source": "{NUM_TABS, plural, =1 {Unmute tab} other {Unmute tabs}}",
+    "message": "{NUM_TABS, plural, =1 {Sekmenin sesini aç} other {Sekmelerin sesini aç}}"
+  },
+  {
+    "name": "IDS_TAB_CXMENU_SOUND_MUTE_TAB",
+    "source": "{NUM_TABS, plural, =1 {Mute Tab} other {Mute Tabs}}",
+    "message": "{NUM_TABS, plural, =1 {Sekmeyi sessize al} other {Sekmeleri sessize al}}"
+  },
+  {
+    "name": "IDS_TAB_CXMENU_SOUND_UNMUTE_TAB",
+    "source": "{NUM_TABS, plural, =1 {Unmute Tab} other {Unmute Tabs}}",
+    "message": "{NUM_TABS, plural, =1 {Sekmenin sesini aç} other {Sekmelerin sesini aç}}"
   }
 ]
