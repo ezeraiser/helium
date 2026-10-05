@@ -1,0 +1,16 @@
+--- a/testing/scripts/common.py
++++ b/testing/scripts/common.py
+@@ -83,8 +83,12 @@
+   if sys.getwindowsversion().build < 19041:
+     return
+   try:
++    # icacls writes in the OEM code page, but text mode decodes with the ANSI
++    # one; on non-English Windows (cp857 vs cp1254 on Turkish, ...) that raises
++    # UnicodeDecodeError. Only a substring search of the output follows.
+     existing_acls = subprocess.check_output(
+-      ['icacls', acl_dir], stderr=subprocess.STDOUT, universal_newlines=True
++      ['icacls', acl_dir], stderr=subprocess.STDOUT, universal_newlines=True,
++      errors='replace'
+     )
+   except subprocess.CalledProcessError as e:
+     logging.error('Failed to retrieve existing ACLs for directory %s', acl_dir)
