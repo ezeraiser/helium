@@ -9,6 +9,9 @@ on:
 jobs:
   check-release:
     name: Create release if it makes sense
+    # Ezer: forks have no release tags to diff against (the changelog below needs the
+    # previous version's tag), so this only makes sense in the upstream repository.
+    if: github.repository == 'imputnet/helium-chromium'
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
