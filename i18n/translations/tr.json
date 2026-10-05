@@ -1423,5 +1423,40 @@
     "name": "IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY",
     "source": "Delay",
     "message": "Gecikme"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW",
+    "source": "Show bookmark sidebar",
+    "message": "Yer imleri kenar çubuğunu göster"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION",
+    "source": "Bookmark sidebar position",
+    "message": "Yer imleri kenar çubuğu konumu"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_LEFT",
+    "source": "Left",
+    "message": "Sol"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_RIGHT",
+    "source": "Right",
+    "message": "Sağ"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_TOP",
+    "source": "Top",
+    "message": "Üst"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION_BOTTOM",
+    "source": "Bottom",
+    "message": "Alt"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER",
+    "source": "Expand bookmark sidebar on hover",
+    "message": "Üzerine gelince yer imleri kenar çubuğunu genişlet"
   }
 ]
