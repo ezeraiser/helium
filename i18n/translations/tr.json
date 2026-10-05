@@ -1458,5 +1458,15 @@
     "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER",
     "source": "Expand bookmark sidebar on hover",
     "message": "Üzerine gelince yer imleri kenar çubuğunu genişlet"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_ADD_SEPARATOR",
+    "source": "Add separator",
+    "message": "Ayraç ekle"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR",
+    "source": "Remove separator",
+    "message": "Ayracı kaldır"
   }
 ]

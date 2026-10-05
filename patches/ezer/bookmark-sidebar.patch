@@ -61,7 +61,7 @@
  
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -320,6 +320,27 @@
+@@ -320,6 +320,33 @@
      </message>
      <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
        Delay
@@ -86,6 +86,12 @@
 +    </message>
 +    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_EXPAND_ON_HOVER" desc="Label for the toggle that makes the icon-only bookmark sidebar expand to show bookmark titles when hovered.">
 +      Expand bookmark sidebar on hover
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_ADD_SEPARATOR" desc="Context menu item that adds a separator line to the bookmark sidebar, after the bookmark that was right-clicked.">
++      Add separator
++    </message>
++    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR" desc="Context menu item that removes the separator line that was right-clicked in the bookmark sidebar.">
++      Remove separator
      </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
@@ -400,7 +406,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,190 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -530,7 +536,11 @@
 +  struct Entry {
 +    int64_t node_id = 0;
 +    std::u16string title;
++    // The child view of `contents_` for this bookmark. For a separator this is
++    // a plain line view and `button` is null.
++    raw_ptr<views::View> view = nullptr;
 +    raw_ptr<views::LabelButton> button = nullptr;
++    bool is_separator = false;
 +  };
 +
 +  // Rebuilds every button from the bookmark bar's children.
@@ -548,6 +558,11 @@
 +  void OnPrefChanged();
 +  void SetExpanded(bool expanded);
 +  void InvalidateParentLayout();
++
++  // Adds a separator bookmark after the node that was last right-clicked (or
++  // at the end of the bookmark bar), and removes the right-clicked one.
++  void AddSeparator();
++  void RemoveSeparator();
 +
 +  void OnNodePressed(int64_t node_id, const ui::Event& event);
 +  void OpenNode(const bookmarks::BookmarkNode* node, int event_flags);
@@ -574,13 +589,17 @@
 +  std::unique_ptr<views::MenuRunner> menu_runner_;
 +  std::vector<std::unique_ptr<ui::SimpleMenuModel>> menu_models_;
 +  std::map<int, int64_t> menu_command_to_node_id_;
++  // What the last right-click landed on: the node id (0 for empty space) and
++  // whether it was a separator.
++  int64_t context_node_id_ = 0;
++  bool context_on_separator_ = false;
 +  int next_menu_command_id_ = 0;
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,623 @@
+@@ -0,0 +1,749 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -618,6 +637,7 @@
 +#include "ui/base/window_open_disposition_utils.h"
 +#include "ui/compositor/layer.h"
 +#include "ui/events/event_constants.h"
++#include "ui/gfx/canvas.h"
 +#include "ui/gfx/geometry/insets.h"
 +#include "ui/gfx/geometry/rect.h"
 +#include "ui/gfx/text_constants.h"
@@ -637,6 +657,8 @@
 +// to folder-menu entries (which count up from 1).
 +constexpr int kCommandShowSidebar = 1000001;
 +constexpr int kCommandExpandOnHover = 1000002;
++constexpr int kCommandAddSeparator = 1000004;
++constexpr int kCommandRemoveSeparator = 1000005;
 +// One radio item per BookmarkSidebarView::Position; the position is added to
 +// this base.
 +constexpr int kCommandPositionBase = 1000010;
@@ -651,6 +673,51 @@
 +constexpr int kButtonSpacing = 2;
 +// Thickness of the separator drawn on the edge that faces the page.
 +constexpr int kSeparatorThickness = 1;
++
++// A separator is an ordinary bookmark with this URL, so it is stored, synced
++// and reordered like any other one. The sidebar draws it as a thin line
++// instead of a button; elsewhere it is just a bookmark titled "---".
++constexpr char kSeparatorUrl[] = "about:blank#helium-separator";
++constexpr char16_t kSeparatorTitle[] = u"---";
++// Space a separator takes along the strip, and the margin its line leaves at
++// both ends across the strip.
++constexpr int kSeparatorSlot = 9;
++constexpr int kSeparatorLineInset = 6;
++
++bool IsSeparatorNode(const bookmarks::BookmarkNode* node) {
++  return node->is_url() && node->url().spec() == kSeparatorUrl;
++}
++
++// A thin line that runs across the strip: horizontal in a left/right column,
++// vertical in a top/bottom row.
++class SeparatorView : public views::View {
++ public:
++  void SetHorizontalLine(bool horizontal) {
++    if (horizontal_ != horizontal) {
++      horizontal_ = horizontal;
++      SchedulePaint();
++    }
++  }
++
++  void OnPaint(gfx::Canvas* canvas) override {
++    const gfx::Rect bounds = GetLocalBounds();
++    const SkColor color = GetColorProvider()->GetColor(kColorToolbarSeparator);
++    if (horizontal_) {
++      canvas->FillRect(
++          gfx::Rect(kSeparatorLineInset, bounds.height() / 2,
++                    std::max(0, bounds.width() - 2 * kSeparatorLineInset), 1),
++          color);
++    } else {
++      canvas->FillRect(
++          gfx::Rect(bounds.width() / 2, kSeparatorLineInset, 1,
++                    std::max(0, bounds.height() - 2 * kSeparatorLineInset)),
++          color);
++    }
++  }
++
++ private:
++  bool horizontal_ = true;
++};
 +
 +PrefService* GetPrefs(Browser* browser) {
 +  return browser->profile()->GetPrefs();
@@ -827,7 +894,7 @@
 +  // Favicons load one by one at startup; rebuilding every button for each of
 +  // them would be quadratic and would keep destroying the hovered button.
 +  for (const Entry& entry : entries_) {
-+    if (entry.node_id == node->id()) {
++    if (entry.node_id == node->id() && entry.button) {
 +      entry.button->SetImageModel(views::Button::STATE_NORMAL, GetIcon(node));
 +      return;
 +    }
@@ -868,6 +935,12 @@
 +    case kCommandShowSidebar:
 +      ToggleVisibility();
 +      return;
++    case kCommandAddSeparator:
++      AddSeparator();
++      return;
++    case kCommandRemoveSeparator:
++      RemoveSeparator();
++      return;
 +    case kCommandExpandOnHover:
 +      prefs->SetBoolean(
 +          prefs::kHeliumBookmarkSidebarExpandOnHover,
@@ -902,6 +975,16 @@
 +  menu_models_.clear();
 +  menu_command_to_node_id_.clear();
 +
++  context_node_id_ = 0;
++  context_on_separator_ = false;
++  for (const Entry& entry : entries_) {
++    if (entry.view == source) {
++      context_node_id_ = entry.node_id;
++      context_on_separator_ = entry.is_separator;
++      break;
++    }
++  }
++
 +  auto menu = std::make_unique<ui::SimpleMenuModel>(this);
 +  menu->AddCheckItem(
 +      kCommandShowSidebar,
@@ -933,6 +1016,15 @@
 +      kCommandPositionSubmenu,
 +      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_POSITION),
 +      position_menu_ptr);
++  menu->AddSeparator(ui::NORMAL_SEPARATOR);
++  menu->AddItem(
++      kCommandAddSeparator,
++      l10n_util::GetStringUTF16(IDS_SETTINGS_BOOKMARK_SIDEBAR_ADD_SEPARATOR));
++  if (context_on_separator_) {
++    menu->AddItem(kCommandRemoveSeparator,
++                  l10n_util::GetStringUTF16(
++                      IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR));
++  }
 +
 +  ui::SimpleMenuModel* menu_ptr = menu.get();
 +  menu_models_.push_back(std::move(menu));
@@ -969,7 +1061,15 @@
 +    Entry entry;
 +    entry.node_id = child->id();
 +    entry.title = GetNodeTitle(child.get());
-+    entry.button = contents_->AddChildView(CreateButton(child.get()));
++    if (IsSeparatorNode(child.get())) {
++      entry.is_separator = true;
++      auto separator = std::make_unique<SeparatorView>();
++      separator->set_context_menu_controller(this);
++      entry.view = contents_->AddChildView(std::move(separator));
++    } else {
++      entry.button = contents_->AddChildView(CreateButton(child.get()));
++      entry.view = entry.button;
++    }
 +    entries_.push_back(std::move(entry));
 +  }
 +  UpdateButtons();
@@ -1016,6 +1116,14 @@
 +  const int cross_size =
 +      GetCurrentThickness() - kSeparatorThickness - 2 * kStripPadding;
 +  for (const Entry& entry : entries_) {
++    if (entry.is_separator) {
++      auto* separator = static_cast<SeparatorView*>(entry.view.get());
++      separator->SetHorizontalLine(!horizontal);
++      separator->SetPreferredSize(horizontal
++                                      ? gfx::Size(kSeparatorSlot, cross_size)
++                                      : gfx::Size(cross_size, kSeparatorSlot));
++      continue;
++    }
 +    views::LabelButton* button = entry.button;
 +    button->SetText(expanded_ ? entry.title : std::u16string());
 +    if (!horizontal) {
@@ -1116,9 +1224,44 @@
 +  OpenNode(node, event.flags());
 +}
 +
++void BookmarkSidebarView::AddSeparator() {
++  if (!model_ || !model_->loaded()) {
++    return;
++  }
++  const bookmarks::BookmarkNode* parent = model_->bookmark_bar_node();
++  size_t index = parent->children().size();
++  if (context_node_id_ != 0) {
++    if (const bookmarks::BookmarkNode* node =
++            bookmarks::GetBookmarkNodeByID(model_, context_node_id_)) {
++      if (node->parent()) {
++        parent = node->parent();
++        index = parent->children().size();
++        if (std::optional<size_t> node_index = parent->GetIndexOf(node)) {
++          index = *node_index + 1;
++        }
++      }
++    }
++  }
++  model_->AddURL(parent, index, kSeparatorTitle, GURL(kSeparatorUrl),
++                 /*meta_info=*/nullptr, /*creation_time=*/std::nullopt,
++                 /*uuid=*/std::nullopt, /*added_by_user=*/true);
++}
++
++void BookmarkSidebarView::RemoveSeparator() {
++  if (!model_ || context_node_id_ == 0) {
++    return;
++  }
++  if (const bookmarks::BookmarkNode* node =
++          bookmarks::GetBookmarkNodeByID(model_, context_node_id_);
++      node && IsSeparatorNode(node)) {
++    model_->Remove(node, bookmarks::metrics::BookmarkEditSource::kUser,
++                   FROM_HERE);
++  }
++}
++
 +void BookmarkSidebarView::OpenNode(const bookmarks::BookmarkNode* node,
 +                                   int event_flags) {
-+  if (!node->is_url()) {
++  if (!node->is_url() || IsSeparatorNode(node)) {
 +    return;
 +  }
 +  browser_->OpenURL(
@@ -1194,6 +1337,8 @@
 +        menu->AddSubMenu(next_menu_command_id_++, child->GetTitle(),
 +                         submenu_ptr);
 +      }
++    } else if (IsSeparatorNode(child.get())) {
++      menu->AddSeparator(ui::NORMAL_SEPARATOR);
 +    } else {
 +      const int command_id = next_menu_command_id_++;
 +      menu_command_to_node_id_[command_id] = child->id();

@@ -1357,6 +1357,18 @@
     "message": "Expand bookmark sidebar on hover"
   },
   {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_ADD_SEPARATOR",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Context menu item that adds a separator line to the bookmark sidebar, after the bookmark that was right-clicked.",
+    "message": "Add separator"
+  },
+  {
+    "name": "IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Context menu item that removes the separator line that was right-clicked in the bookmark sidebar.",
+    "message": "Remove separator"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",
