@@ -146,21 +146,21 @@
        undefined = undefined;
  
    // <if expr="is_linux">
-@@ -305,6 +312,14 @@
- 
-   // Ezer: values are milliseconds, stored directly in
-   // helium.browser.vertical_expand_on_hover_delay_ms.
+@@ -301,6 +308,14 @@
+   protected accessor sidePanelAlignmentOptions_: DropdownMenuOptionList = [
+     {value: 'false', name: loadTimeData.getString('uiFeatureAlignLeft')},
+     {value: 'true', name: loadTimeData.getString('uiFeatureAlignRight')},
++  ];
++
 +  // Values match the position pref (0 = left, 1 = right, 2 = top, 3 = bottom).
 +  protected accessor bookmarkSidebarPositionOptions_: DropdownMenuOptionList = [
 +    {value: 0, name: loadTimeData.getString('bookmarkSidebarPositionLeft')},
 +    {value: 1, name: loadTimeData.getString('bookmarkSidebarPositionRight')},
 +    {value: 2, name: loadTimeData.getString('bookmarkSidebarPositionTop')},
 +    {value: 3, name: loadTimeData.getString('bookmarkSidebarPositionBottom')},
-+  ];
-+
-   protected accessor expandOnHoverDelayOptions_: DropdownMenuOptionList = [
-     {value: 0, name: '0 ms'},
-     {value: 100, name: '100 ms'},
+   ];
+ 
+   // Ezer: values are milliseconds, stored directly in
 @@ -390,6 +405,9 @@
        'vertical_tabs.collapsed_state': 'verticalTabsCollapsedStatePref_',
        'helium.browser.vertical_expand_on_hover':
