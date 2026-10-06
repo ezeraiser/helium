@@ -435,7 +435,7 @@
 +#include "ui/views/view.h"
 +#include "url/gurl.h"
 +
-+class Browser;
++class BrowserWindowInterface;
 +
 +namespace bookmarks {
 +class BookmarkModel;
@@ -476,7 +476,7 @@
 +  // Width of a left/right strip while hover-expanded.
 +  static constexpr int kExpandedWidth = 240;
 +
-+  explicit BookmarkSidebarView(Browser* browser);
++  explicit BookmarkSidebarView(BrowserWindowInterface* browser);
 +  BookmarkSidebarView(const BookmarkSidebarView&) = delete;
 +  BookmarkSidebarView& operator=(const BookmarkSidebarView&) = delete;
 +  ~BookmarkSidebarView() override;
@@ -571,7 +571,7 @@
 +  void BuildFolderMenu(ui::SimpleMenuModel* menu,
 +                       const bookmarks::BookmarkNode* folder);
 +
-+  const raw_ptr<Browser> browser_;
++  const raw_ptr<BrowserWindowInterface> browser_;
 +  raw_ptr<bookmarks::BookmarkModel> model_ = nullptr;
 +  base::ScopedObservation<bookmarks::BookmarkModel,
 +                          bookmarks::BookmarkModelObserver>
@@ -618,7 +618,7 @@
 +#include "chrome/browser/favicon/favicon_utils.h"
 +#include "chrome/browser/profiles/profile.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
-+#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/color/chrome_color_id.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
 +#include "chrome/common/pref_names.h"
@@ -691,6 +691,8 @@
 +// A thin line that runs across the strip: horizontal in a left/right column,
 +// vertical in a top/bottom row.
 +class SeparatorView : public views::View {
++  METADATA_HEADER(SeparatorView, views::View)
++
 + public:
 +  void SetHorizontalLine(bool horizontal) {
 +    if (horizontal_ != horizontal) {
@@ -719,8 +721,11 @@
 +  bool horizontal_ = true;
 +};
 +
-+PrefService* GetPrefs(Browser* browser) {
-+  return browser->profile()->GetPrefs();
++BEGIN_METADATA(SeparatorView)
++END_METADATA
++
++PrefService* GetPrefs(BrowserWindowInterface* browser) {
++  return browser->GetProfile()->GetPrefs();
 +}
 +
 +std::u16string GetNodeTitle(const bookmarks::BookmarkNode* node) {
@@ -732,7 +737,7 @@
 +
 +}  // namespace
 +
-+BookmarkSidebarView::BookmarkSidebarView(Browser* browser)
++BookmarkSidebarView::BookmarkSidebarView(BrowserWindowInterface* browser)
 +    : browser_(browser) {
 +  SetLayoutManager(std::make_unique<views::FillLayout>());
 +  SetNotifyEnterExitOnChild(true);
@@ -760,7 +765,7 @@
 +  scroll_view_->set_context_menu_controller(this);
 +  contents_->set_context_menu_controller(this);
 +
-+  model_ = BookmarkModelFactory::GetForBrowserContext(browser_->profile());
++  model_ = BookmarkModelFactory::GetForBrowserContext(browser_->GetProfile());
 +  if (model_) {
 +    model_observation_.Observe(model_);
 +  }
@@ -1087,7 +1092,7 @@
 +  button->SetHorizontalAlignment(gfx::ALIGN_LEFT);
 +  button->SetImageLabelSpacing(8);
 +  button->SetEnabledTextColors(kColorBookmarkBarForeground);
-+  button->label()->SetElideBehavior(gfx::ELIDE_TAIL);
++  button->SetElideBehavior(gfx::ELIDE_TAIL);
 +  button->SetTriggerableEventFlags(ui::EF_LEFT_MOUSE_BUTTON |
 +                                   ui::EF_MIDDLE_MOUSE_BUTTON);
 +  button->SetTooltipText(GetNodeTitle(node));
@@ -1264,12 +1269,7 @@
 +  if (!node->is_url() || IsSeparatorNode(node)) {
 +    return;
 +  }
-+  browser_->OpenURL(
-+      content::OpenURLParams(node->url(), content::Referrer(),
-+                             ui::DispositionFromEventFlags(event_flags),
-+                             ui::PAGE_TRANSITION_AUTO_BOOKMARK,
-+                             /*is_renderer_initiated=*/false),
-+      /*navigation_handle_callback=*/{});
++  browser_->OpenGURL(node->url(), ui::DispositionFromEventFlags(event_flags));
 +}
 +
 +void BookmarkSidebarView::ShowFolderMenu(
