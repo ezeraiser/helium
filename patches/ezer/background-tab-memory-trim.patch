@@ -86,7 +86,7 @@
        base::FeatureList::IsEnabled(features::kWebContentsDiscard);
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.h
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,122 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -150,6 +150,7 @@
 +  void OnPageNodeRemoved(const PageNode* page_node) override;
 +
 +  // FrameNodeObserver:
++  void OnIsAudibleChanged(const FrameNode* frame_node) override;
 +  void OnFrameNodeAdded(const FrameNode* frame_node) override;
 +  void OnFrameNodeRemoved(
 +      const FrameNode* frame_node,
@@ -210,7 +211,7 @@
 +#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_BACKGROUND_TAB_TRIM_POLICY_H_
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.cc
-@@ -0,0 +1,249 @@
+@@ -0,0 +1,254 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -300,6 +301,11 @@
 +}
 +
 +void BackgroundTabTrimPolicy::OnPageNodeRemoved(const PageNode* page_node) {
++  ScheduleEvaluate();
++}
++
++void BackgroundTabTrimPolicy::OnIsAudibleChanged(const FrameNode* frame_node) {
++  ForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
