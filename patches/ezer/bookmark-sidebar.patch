@@ -625,7 +625,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,760 @@
+@@ -0,0 +1,741 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -697,8 +697,6 @@
 +// Widest a button of a top/bottom strip gets while its title is shown.
 +constexpr int kMaxHorizontalButtonWidth = 200;
 +constexpr int kButtonSpacing = 2;
-+// Thickness of the separator drawn on the edge that faces the page.
-+constexpr int kSeparatorThickness = 1;
 +
 +// A separator is an ordinary bookmark with this URL, so it is stored, synced
 +// and reordered like any other one. The sidebar draws it as a thin line
@@ -1156,7 +1154,7 @@
 +  // Extent across the strip, which is fixed: all buttons of a column share the
 +  // strip's width, all buttons of a row its height.
 +  const int cross_size =
-+      GetCurrentThickness() - kSeparatorThickness - 2 * kStripPadding;
++      GetCurrentThickness() - 2 * kStripPadding;
 +  for (const Entry& entry : entries_) {
 +    if (entry.is_separator) {
 +      auto* separator = static_cast<SeparatorView*>(entry.view.get());
@@ -1185,24 +1183,7 @@
 +}
 +
 +void BookmarkSidebarView::OnPrefChanged() {
-+  // The separator goes on the edge that faces the page.
 +  const bool horizontal = IsHorizontal();
-+  gfx::Insets separator;
-+  switch (GetPosition()) {
-+    case Position::kLeft:
-+      separator = gfx::Insets::TLBR(0, 0, 0, kSeparatorThickness);
-+      break;
-+    case Position::kRight:
-+      separator = gfx::Insets::TLBR(0, kSeparatorThickness, 0, 0);
-+      break;
-+    case Position::kTop:
-+      separator = gfx::Insets::TLBR(0, 0, kSeparatorThickness, 0);
-+      break;
-+    case Position::kBottom:
-+      separator = gfx::Insets::TLBR(kSeparatorThickness, 0, 0, 0);
-+      break;
-+  }
-+  SetBorder(views::CreateSolidSidedBorder(separator, kColorToolbarSeparator));
 +
 +  // Buttons run down a left/right strip and along a top/bottom one.
 +  contents_->SetOrientation(horizontal
