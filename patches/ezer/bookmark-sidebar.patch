@@ -431,7 +431,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,191 @@
+@@ -0,0 +1,208 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -447,6 +447,7 @@
 +
 +#include "base/location.h"
 +#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
 +#include "base/scoped_observation.h"
 +#include "base/timer/timer.h"
 +#include "components/bookmarks/browser/bookmark_model_observer.h"
@@ -460,6 +461,7 @@
 +#include "ui/views/view.h"
 +#include "url/gurl.h"
 +
++class BookmarkContextMenu;
 +class BrowserWindowInterface;
 +
 +namespace bookmarks {
@@ -590,6 +592,18 @@
 +  void AddSeparator();
 +  void RemoveSeparator();
 +
++  // Right-click handling: the browser's own bookmark context menu, with the
++  // sidebar's items appended. Falls back to a menu of only the sidebar's items
++  // when there is no bookmark to act on.
++  void RunNativeContextMenu(std::vector<int64_t> node_ids,
++                            const gfx::Point& point,
++                            ui::mojom::MenuSourceType source_type,
++                            bool can_paste);
++  void RunSidebarContextMenu(const gfx::Point& point,
++                             ui::mojom::MenuSourceType source_type);
++  // The sidebar's own menu items (visibility, hover, position, separators).
++  std::unique_ptr<ui::SimpleMenuModel> BuildSidebarMenuModel();
++
 +  void OnNodePressed(int64_t node_id, const ui::Event& event);
 +  void OpenNode(const bookmarks::BookmarkNode* node, int event_flags);
 +  void ShowFolderMenu(views::View* anchor,
@@ -613,6 +627,7 @@
 +
 +  // State of the popup that is open for a folder click or a right click.
 +  std::unique_ptr<views::MenuRunner> menu_runner_;
++  std::unique_ptr<BookmarkContextMenu> native_context_menu_;
 +  std::vector<std::unique_ptr<ui::SimpleMenuModel>> menu_models_;
 +  std::map<int, int64_t> menu_command_to_node_id_;
 +  // What the last right-click landed on: the node id (0 for empty space) and
@@ -620,12 +635,14 @@
 +  int64_t context_node_id_ = 0;
 +  bool context_on_separator_ = false;
 +  int next_menu_command_id_ = 0;
++
++  base::WeakPtrFactory<BookmarkSidebarView> weak_ptr_factory_{this};
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,741 @@
+@@ -0,0 +1,912 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -638,14 +655,21 @@
 +#include <utility>
 +
 +#include "base/functional/bind.h"
++#include "base/functional/callback.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/time/time.h"
++#include "chrome/browser/bookmarks/bookmark_merged_surface_service.h"
++#include "chrome/browser/bookmarks/bookmark_merged_surface_service_factory.h"
 +#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 +#include "chrome/browser/favicon/favicon_utils.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
++#include "chrome/browser/ui/bookmarks/bookmark_stats.h"
++#include "chrome/browser/ui/bookmarks/bookmark_ui_operations_helper.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 +#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 +#include "chrome/browser/ui/color/chrome_color_id.h"
++#include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
 +#include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
 +#include "chrome/common/pref_names.h"
 +#include "chrome/grit/generated_resources.h"
@@ -670,6 +694,8 @@
 +#include "ui/views/background.h"
 +#include "ui/views/border.h"
 +#include "ui/views/controls/button/label_button.h"
++#include "ui/views/controls/menu/menu_item_view.h"
++#include "ui/views/controls/menu/menu_model_adapter.h"
 +#include "ui/views/controls/scrollbar/scroll_bar.h"
 +#include "ui/views/controls/scroll_view.h"
 +#include "ui/views/layout/box_layout.h"
@@ -690,6 +716,69 @@
 +constexpr int kCommandPositionBase = 1000010;
 +constexpr int kCommandPositionSubmenu = 1000020;
 +constexpr int kPositionRadioGroup = 1;
++
++// The browser's bookmark context menu with the sidebar's own commands (ids
++// from kCommandShowSidebar up) routed back to the sidebar.
++class SidebarContextMenu : public BookmarkContextMenu {
++ public:
++  SidebarContextMenu(
++      BookmarkSidebarView* sidebar,
++      views::Widget* parent_widget,
++      BrowserWindowInterface* browser,
++      Profile* profile,
++      const std::vector<raw_ptr<const bookmarks::BookmarkNode,
++                                VectorExperimental>>& selection,
++      bool can_paste,
++      base::RepeatingClosure on_closed)
++      : BookmarkContextMenu(parent_widget,
++                            browser,
++                            profile,
++                            BookmarkLaunchLocation::kAttachedBar,
++                            selection,
++                            /*close_on_remove=*/true,
++                            can_paste),
++        sidebar_(sidebar),
++        on_closed_(std::move(on_closed)) {}
++
++  void ExecuteCommand(int command_id, int event_flags) override {
++    if (IsSidebarCommand(command_id)) {
++      sidebar_->ExecuteCommand(command_id, event_flags);
++      return;
++    }
++    BookmarkContextMenu::ExecuteCommand(command_id, event_flags);
++  }
++
++  bool IsItemChecked(int command_id) const override {
++    return IsSidebarCommand(command_id)
++               ? sidebar_->IsCommandIdChecked(command_id)
++               : BookmarkContextMenu::IsItemChecked(command_id);
++  }
++
++  bool IsCommandEnabled(int command_id) const override {
++    return IsSidebarCommand(command_id)
++               ? true
++               : BookmarkContextMenu::IsCommandEnabled(command_id);
++  }
++
++  bool IsCommandVisible(int command_id) const override {
++    return IsSidebarCommand(command_id)
++               ? true
++               : BookmarkContextMenu::IsCommandVisible(command_id);
++  }
++
++  void OnMenuClosed(views::MenuItemView* menu) override {
++    BookmarkContextMenu::OnMenuClosed(menu);
++    on_closed_.Run();
++  }
++
++ private:
++  static bool IsSidebarCommand(int command_id) {
++    return command_id >= kCommandShowSidebar;
++  }
++
++  const raw_ptr<BookmarkSidebarView> sidebar_;
++  base::RepeatingClosure on_closed_;
++};
 +
 +constexpr int kButtonIconPadding = 8;
 +constexpr int kButtonHeight = 16 + 2 * kButtonIconPadding;
@@ -1001,6 +1090,7 @@
 +    const gfx::Point& point,
 +    ui::mojom::MenuSourceType source_type) {
 +  menu_runner_.reset();
++  native_context_menu_.reset();
 +  menu_models_.clear();
 +  menu_command_to_node_id_.clear();
 +
@@ -1014,6 +1104,118 @@
 +    }
 +  }
 +
++  // Like the bookmark bar: a right click on a bookmark acts on it, one on the
++  // empty space acts on the whole bookmark bar.
++  std::vector<int64_t> node_ids;
++  const bookmarks::BookmarkNode* context_node =
++      model_ ? bookmarks::GetBookmarkNodeByID(model_, context_node_id_)
++             : nullptr;
++  BookmarkMergedSurfaceService* service =
++      BookmarkMergedSurfaceServiceFactory::GetForProfile(
++          browser_->GetProfile());
++  if (context_node) {
++    node_ids.push_back(context_node->id());
++  } else if (service) {
++    for (const bookmarks::BookmarkNode* node : service->GetUnderlyingNodes(
++             BookmarkParentFolder::BookmarkBarFolder())) {
++      node_ids.push_back(node->id());
++    }
++  }
++  if (node_ids.empty() || !service) {
++    // The browser's menu needs at least one bookmark to anchor to.
++    RunSidebarContextMenu(point, source_type);
++    return;
++  }
++
++  std::vector<raw_ptr<const bookmarks::BookmarkNode, VectorExperimental>>
++      nodes;
++  for (int64_t id : node_ids) {
++    nodes.emplace_back(bookmarks::GetBookmarkNodeByID(model_, id));
++  }
++  auto parent_folder =
++      BookmarkContextMenuController::GetParentForNewNodes(nodes);
++  BookmarkUIOperationsHelperMergedSurfaces(service, parent_folder.get())
++      .CanPasteFromClipboard(
++          base::BindOnce(&BookmarkSidebarView::RunNativeContextMenu,
++                         weak_ptr_factory_.GetWeakPtr(), std::move(node_ids),
++                         point, source_type));
++}
++
++void BookmarkSidebarView::RunNativeContextMenu(
++    std::vector<int64_t> node_ids,
++    const gfx::Point& point,
++    ui::mojom::MenuSourceType source_type,
++    bool can_paste) {
++  std::vector<raw_ptr<const bookmarks::BookmarkNode, VectorExperimental>>
++      nodes;
++  for (int64_t id : node_ids) {
++    if (const bookmarks::BookmarkNode* node =
++            bookmarks::GetBookmarkNodeByID(model_, id)) {
++      nodes.emplace_back(node);
++    }
++  }
++  if (nodes.empty() || !GetWidget()) {
++    return;
++  }
++
++  native_context_menu_ = std::make_unique<SidebarContextMenu>(
++      this, GetWidget(), browser_, browser_->GetProfile(), nodes, can_paste,
++      base::BindRepeating(
++          [](BookmarkSidebarView* self) {
++            if (!self->IsMouseHovered()) {
++              self->SetExpanded(false);
++            }
++          },
++          base::Unretained(this)));
++
++  // Append the sidebar's items below the bookmark ones.
++  views::MenuItemView* menu = native_context_menu_->menu();
++  menu->AppendSeparator();
++  auto sidebar_menu = BuildSidebarMenuModel();
++  ui::SimpleMenuModel* sidebar_menu_ptr = sidebar_menu.get();
++  menu_models_.push_back(std::move(sidebar_menu));
++  ui::MenuModel* position_model = nullptr;
++  for (size_t i = 0; i < sidebar_menu_ptr->GetItemCount(); ++i) {
++    const int command_id = sidebar_menu_ptr->GetCommandIdAt(i);
++    views::MenuModelAdapter::AppendMenuItemFromModel(sidebar_menu_ptr, i, menu,
++                                                     command_id);
++    if (command_id == kCommandPositionSubmenu) {
++      position_model = sidebar_menu_ptr->GetSubmenuModelAt(i);
++    }
++  }
++  if (position_model) {
++    views::MenuItemView* item = menu->GetMenuItemByID(kCommandPositionSubmenu);
++    for (size_t i = 0; i < position_model->GetItemCount(); ++i) {
++      views::MenuModelAdapter::AppendMenuItemFromModel(
++          position_model, i, item, position_model->GetCommandIdAt(i));
++    }
++  }
++
++  native_context_menu_->RunMenuAt(point, source_type);
++}
++
++void BookmarkSidebarView::RunSidebarContextMenu(
++    const gfx::Point& point,
++    ui::mojom::MenuSourceType source_type) {
++  auto menu = BuildSidebarMenuModel();
++  ui::SimpleMenuModel* menu_ptr = menu.get();
++  menu_models_.push_back(std::move(menu));
++
++  menu_runner_ = std::make_unique<views::MenuRunner>(
++      menu_ptr, views::MenuRunner::CONTEXT_MENU,
++      base::BindRepeating(
++          [](BookmarkSidebarView* self) {
++            if (!self->IsMouseHovered()) {
++              self->SetExpanded(false);
++            }
++          },
++          base::Unretained(this)));
++  menu_runner_->RunMenuAt(GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
++                          views::MenuAnchorPosition::kTopLeft, source_type);
++}
++
++std::unique_ptr<ui::SimpleMenuModel>
++BookmarkSidebarView::BuildSidebarMenuModel() {
 +  auto menu = std::make_unique<ui::SimpleMenuModel>(this);
 +  menu->AddCheckItem(
 +      kCommandShowSidebar,
@@ -1054,21 +1256,7 @@
 +                  l10n_util::GetStringUTF16(
 +                      IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR));
 +  }
-+
-+  ui::SimpleMenuModel* menu_ptr = menu.get();
-+  menu_models_.push_back(std::move(menu));
-+
-+  menu_runner_ = std::make_unique<views::MenuRunner>(
-+      menu_ptr, views::MenuRunner::CONTEXT_MENU,
-+      base::BindRepeating(
-+          [](BookmarkSidebarView* self) {
-+            if (!self->IsMouseHovered()) {
-+              self->SetExpanded(false);
-+            }
-+          },
-+          base::Unretained(this)));
-+  menu_runner_->RunMenuAt(GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
-+                          views::MenuAnchorPosition::kTopLeft, source_type);
++  return menu;
 +}
 +
 +void BookmarkSidebarView::Layout(PassKey) {
