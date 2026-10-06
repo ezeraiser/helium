@@ -360,11 +360,13 @@
    pref_change_registrar_.Add(
        bookmarks::prefs::kShowTabGroupsInBookmarkBar,
        base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
-@@ -231,6 +237,9 @@
+@@ -231,6 +237,11 @@
    }
  
    PrefService* prefs = profile->GetPrefs();
-+  if (prefs->GetBoolean(prefs::kHeliumBookmarkSidebarVisible)) {
++  // Only normal windows get the sidebar, so only they lose the bar.
++  if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL &&
++      prefs->GetBoolean(prefs::kHeliumBookmarkSidebarVisible)) {
 +    return false;
 +  }
    bool should_show_bar =
@@ -431,7 +433,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,214 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -604,6 +606,9 @@
 +  // The sidebar's own menu items (visibility, hover, position, separators).
 +  std::unique_ptr<ui::SimpleMenuModel> BuildSidebarMenuModel();
 +
++  // Collapses the strip again once a popup closes with the mouse gone.
++  void OnPopupMenuClosed();
++
 +  void OnNodePressed(int64_t node_id, const ui::Event& event);
 +  void OpenNode(const bookmarks::BookmarkNode* node, int event_flags);
 +  void ShowFolderMenu(views::View* anchor,
@@ -637,12 +642,15 @@
 +  int next_menu_command_id_ = 0;
 +
 +  base::WeakPtrFactory<BookmarkSidebarView> weak_ptr_factory_{this};
++  // Only for the pending clipboard check of a right click, so that a newer
++  // right click can cancel it without cancelling anything else.
++  base::WeakPtrFactory<BookmarkSidebarView> paste_check_weak_factory_{this};
 +};
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,912 @@
+@@ -0,0 +1,913 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1089,6 +1097,8 @@
 +    views::View* source,
 +    const gfx::Point& point,
 +    ui::mojom::MenuSourceType source_type) {
++  // A clipboard check from an earlier right click must not open its menu now.
++  paste_check_weak_factory_.InvalidateWeakPtrs();
 +  menu_runner_.reset();
 +  native_context_menu_.reset();
 +  menu_models_.clear();
@@ -1102,6 +1112,13 @@
 +      context_on_separator_ = entry.is_separator;
 +      break;
 +    }
++  }
++
++  // A separator is a placeholder bookmark that must not be opened or edited, so
++  // it only gets the sidebar's own items (incl. "Remove separator").
++  if (context_on_separator_) {
++    RunSidebarContextMenu(point, source_type);
++    return;
 +  }
 +
 +  // Like the bookmark bar: a right click on a bookmark acts on it, one on the
@@ -1137,7 +1154,8 @@
 +  BookmarkUIOperationsHelperMergedSurfaces(service, parent_folder.get())
 +      .CanPasteFromClipboard(
 +          base::BindOnce(&BookmarkSidebarView::RunNativeContextMenu,
-+                         weak_ptr_factory_.GetWeakPtr(), std::move(node_ids),
++                         paste_check_weak_factory_.GetWeakPtr(),
++                         std::move(node_ids),
 +                         point, source_type));
 +}
 +
@@ -1160,13 +1178,8 @@
 +
 +  native_context_menu_ = std::make_unique<SidebarContextMenu>(
 +      this, GetWidget(), browser_, browser_->GetProfile(), nodes, can_paste,
-+      base::BindRepeating(
-+          [](BookmarkSidebarView* self) {
-+            if (!self->IsMouseHovered()) {
-+              self->SetExpanded(false);
-+            }
-+          },
-+          base::Unretained(this)));
++      base::BindRepeating(&BookmarkSidebarView::OnPopupMenuClosed,
++                          weak_ptr_factory_.GetWeakPtr()));
 +
 +  // Append the sidebar's items below the bookmark ones.
 +  views::MenuItemView* menu = native_context_menu_->menu();
@@ -1194,6 +1207,12 @@
 +  native_context_menu_->RunMenuAt(point, source_type);
 +}
 +
++void BookmarkSidebarView::OnPopupMenuClosed() {
++  if (!IsMouseHovered()) {
++    SetExpanded(false);
++  }
++}
++
 +void BookmarkSidebarView::RunSidebarContextMenu(
 +    const gfx::Point& point,
 +    ui::mojom::MenuSourceType source_type) {
@@ -1203,13 +1222,8 @@
 +
 +  menu_runner_ = std::make_unique<views::MenuRunner>(
 +      menu_ptr, views::MenuRunner::CONTEXT_MENU,
-+      base::BindRepeating(
-+          [](BookmarkSidebarView* self) {
-+            if (!self->IsMouseHovered()) {
-+              self->SetExpanded(false);
-+            }
-+          },
-+          base::Unretained(this)));
++      base::BindRepeating(&BookmarkSidebarView::OnPopupMenuClosed,
++                          weak_ptr_factory_.GetWeakPtr()));
 +  menu_runner_->RunMenuAt(GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
 +                          views::MenuAnchorPosition::kTopLeft, source_type);
 +}
@@ -1519,13 +1533,8 @@
 +  const gfx::Rect menu_anchor(anchor_point, gfx::Size());
 +  menu_runner_ = std::make_unique<views::MenuRunner>(
 +      root_ptr, /*run_types=*/0,
-+      base::BindRepeating(
-+          [](BookmarkSidebarView* self) {
-+            if (!self->IsMouseHovered()) {
-+              self->SetExpanded(false);
-+            }
-+          },
-+          base::Unretained(this)));
++      base::BindRepeating(&BookmarkSidebarView::OnPopupMenuClosed,
++                          weak_ptr_factory_.GetWeakPtr()));
 +  menu_runner_->RunMenuAt(GetWidget(), nullptr, menu_anchor, anchor_position,
 +                          ui::mojom::MenuSourceType::kMouse);
 +}

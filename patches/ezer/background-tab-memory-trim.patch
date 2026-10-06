@@ -86,7 +86,7 @@
        base::FeatureList::IsEnabled(features::kWebContentsDiscard);
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.h
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,130 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -96,6 +96,7 @@
 +
 +#include <map>
 +
++#include "base/memory/weak_ptr.h"
 +#include "base/time/time.h"
 +#include "base/timer/timer.h"
 +#include "components/performance_manager/public/graph/frame_node.h"
@@ -177,9 +178,12 @@
 +  void OnPrefChanged();
 +
 +  // Drops the state of every process that is no longer a candidate (it became
-+  // visible, audible, ...). Done right away, not through the coalescing delay,
-+  // so that a tab that was shown only briefly is trimmed again when it is
-+  // hidden again instead of being remembered as "already trimmed".
++  // visible, audible, ...), so that a tab that was shown only briefly is
++  // trimmed again when it is hidden again instead of being remembered as
++  // "already trimmed". Runs as a task right after the current one rather than
++  // once per event, so a burst of visibility/audibility events costs a single
++  // scan, yet it does not wait for the (slower) evaluation coalescing delay.
++  void ScheduleForgetResumedProcesses();
 +  void ForgetResumedProcesses();
 +
 +  // Coalesces bursts of graph events into a single Evaluate().
@@ -204,6 +208,10 @@
 +  base::OneShotTimer deadline_timer_;
 +  // Fires shortly after graph events, to coalesce them.
 +  base::OneShotTimer event_timer_;
++  // Whether a ForgetResumedProcesses() task is already queued.
++  bool forget_pending_ = false;
++
++  base::WeakPtrFactory<BackgroundTabTrimPolicy> weak_factory_{this};
 +};
 +
 +}  // namespace performance_manager
@@ -211,7 +219,7 @@
 +#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_BACKGROUND_TAB_TRIM_POLICY_H_
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.cc
-@@ -0,0 +1,254 @@
+@@ -0,0 +1,267 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -223,6 +231,7 @@
 +#include "base/functional/bind.h"
 +#include "base/logging.h"
 +#include "base/process/process.h"
++#include "base/task/sequenced_task_runner.h"
 +#include "build/build_config.h"
 +#include "chrome/browser/browser_process.h"
 +#include "components/performance_manager/public/decorators/page_live_state_decorator.h"
@@ -285,18 +294,18 @@
 +}
 +
 +void BackgroundTabTrimPolicy::OnIsVisibleChanged(const PageNode* page_node) {
-+  ForgetResumedProcesses();
++  ScheduleForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
 +void BackgroundTabTrimPolicy::OnIsAudibleChanged(const PageNode* page_node) {
-+  ForgetResumedProcesses();
++  ScheduleForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
 +void BackgroundTabTrimPolicy::OnHasPictureInPictureChanged(
 +    const PageNode* page_node) {
-+  ForgetResumedProcesses();
++  ScheduleForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
@@ -305,7 +314,7 @@
 +}
 +
 +void BackgroundTabTrimPolicy::OnIsAudibleChanged(const FrameNode* frame_node) {
-+  ForgetResumedProcesses();
++  ScheduleForgetResumedProcesses();
 +  ScheduleEvaluate();
 +}
 +
@@ -345,7 +354,19 @@
 +  Evaluate();
 +}
 +
++void BackgroundTabTrimPolicy::ScheduleForgetResumedProcesses() {
++  // Nothing remembered, nothing to forget.
++  if (states_.empty() || forget_pending_) {
++    return;
++  }
++  forget_pending_ = true;
++  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(&BackgroundTabTrimPolicy::ForgetResumedProcesses,
++                                weak_factory_.GetWeakPtr()));
++}
++
 +void BackgroundTabTrimPolicy::ForgetResumedProcesses() {
++  forget_pending_ = false;
 +  for (auto it = states_.begin(); it != states_.end();) {
 +    if (IsTrimCandidate(it->first)) {
 +      ++it;
