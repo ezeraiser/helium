@@ -345,6 +345,31 @@
    // Because side panels have minimum width, in a small browser, it is possible
    // for the combination of minimum-sized contents pane and minimum-sized side
    // panel may exceed the width of the window. In this case, the contents pane
+--- a/chrome/browser/ui/bookmarks/bookmark_bar_controller.cc
++++ b/chrome/browser/ui/bookmarks/bookmark_bar_controller.cc
+@@ -84,6 +84,12 @@
+       base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
+                           base::Unretained(this),
+                           StateChangeReason::kPrefChange));
++  // The sidebar replaces the bookmark bar while it is shown.
++  pref_change_registrar_.Add(
++      prefs::kHeliumBookmarkSidebarVisible,
++      base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
++                          base::Unretained(this),
++                          StateChangeReason::kPrefChange));
+   pref_change_registrar_.Add(
+       bookmarks::prefs::kShowTabGroupsInBookmarkBar,
+       base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
+@@ -231,6 +237,9 @@
+   }
+ 
+   PrefService* prefs = profile->GetPrefs();
++  if (prefs->GetBoolean(prefs::kHeliumBookmarkSidebarVisible)) {
++    return false;
++  }
+   bool should_show_bar =
+       base::FeatureList::IsEnabled(ntp_features::kNtpSimplificationBookmarkBar)
+           ? static_cast<bookmarks::BookmarkBarVisibilityState>(
 --- a/chrome/browser/ui/views/frame/browser_view.h
 +++ b/chrome/browser/ui/views/frame/browser_view.h
 @@ -79,6 +79,7 @@
@@ -406,7 +431,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,191 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -496,6 +521,7 @@
 +  void ToggleVisibility();
 +
 +  // views::View:
++  void Layout(PassKey) override;
 +  void OnMouseEntered(const ui::MouseEvent& event) override;
 +  void OnMouseExited(const ui::MouseEvent& event) override;
 +  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
@@ -599,7 +625,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,749 @@
+@@ -0,0 +1,760 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -1045,6 +1071,17 @@
 +          base::Unretained(this)));
 +  menu_runner_->RunMenuAt(GetWidget(), nullptr, gfx::Rect(point, gfx::Size()),
 +                          views::MenuAnchorPosition::kTopLeft, source_type);
++}
++
++void BookmarkSidebarView::Layout(PassKey) {
++  // An unbounded ScrollView never sizes its contents itself, so give them the
++  // full cross-axis extent and their preferred length along the strip.
++  const gfx::Size available = GetContentsBounds().size();
++  const gfx::Size preferred = contents_->GetPreferredSize();
++  const bool horizontal = IsHorizontal();
++  contents_->SetSize(horizontal ? gfx::Size(preferred.width(), available.height())
++                                : gfx::Size(available.width(), preferred.height()));
++  LayoutSuperclass<views::View>(this);
 +}
 +
 +void BookmarkSidebarView::Rebuild() {
