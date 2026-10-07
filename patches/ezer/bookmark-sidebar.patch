@@ -433,7 +433,7 @@
    layout_views.infobar_container = infobar_container_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,283 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -443,6 +443,7 @@
 +
 +#include <map>
 +#include <memory>
++#include <optional>
 +#include <set>
 +#include <string>
 +#include <vector>
@@ -452,19 +453,30 @@
 +#include "base/memory/weak_ptr.h"
 +#include "base/scoped_observation.h"
 +#include "base/timer/timer.h"
++#include "chrome/browser/bookmarks/bookmark_parent_folder.h"
 +#include "components/bookmarks/browser/bookmark_model_observer.h"
++#include "components/bookmarks/browser/bookmark_node_data.h"
 +#include "components/prefs/pref_change_registrar.h"
 +#include "ui/base/metadata/metadata_header_macros.h"
 +#include "ui/base/models/image_model.h"
++#include "ui/base/clipboard/clipboard_format_type.h"
++#include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 +#include "ui/base/mojom/menu_source_type.mojom-forward.h"
 +#include "ui/menus/simple_menu_model.h"
 +#include "ui/views/context_menu_controller.h"
 +#include "ui/views/controls/menu/menu_runner.h"
++#include "ui/views/drag_controller.h"
 +#include "ui/views/view.h"
 +#include "url/gurl.h"
 +
 +class BookmarkContextMenu;
 +class BrowserWindowInterface;
++
++namespace ui {
++class DropTargetEvent;
++class LayerTreeOwner;
++class OSExchangeData;
++}  // namespace ui
 +
 +namespace bookmarks {
 +class BookmarkModel;
@@ -491,7 +503,8 @@
 +class BookmarkSidebarView : public views::View,
 +                            public bookmarks::BookmarkModelObserver,
 +                            public ui::SimpleMenuModel::Delegate,
-+                            public views::ContextMenuController {
++                            public views::ContextMenuController,
++                            public views::DragController {
 +  METADATA_HEADER(BookmarkSidebarView, views::View)
 +
 + public:
@@ -501,7 +514,7 @@
 +  // Thickness (width for a left/right strip, height for a top/bottom one) of
 +  // the icon-only strip. This is also what the layout reserves for the strip;
 +  // the hover-expanded state of a side strip overlays the page content.
-+  static constexpr int kCollapsedThickness = 40;
++  static constexpr int kCollapsedThickness = 34;
 +  // Width of a left/right strip while hover-expanded.
 +  static constexpr int kExpandedWidth = 240;
 +
@@ -529,6 +542,28 @@
 +  void OnMouseEntered(const ui::MouseEvent& event) override;
 +  void OnMouseExited(const ui::MouseEvent& event) override;
 +  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
++
++  // Drop target (views::View): reorders the bookmarks by dropping them between
++  // (or, for a folder, onto) the buttons.
++  bool GetDropFormats(int* formats,
++                      std::set<ui::ClipboardFormatType>* format_types) override;
++  bool AreDropTypesRequired() override;
++  bool CanDrop(const ui::OSExchangeData& data) override;
++  void OnDragEntered(const ui::DropTargetEvent& event) override;
++  int OnDragUpdated(const ui::DropTargetEvent& event) override;
++  void OnDragExited() override;
++  views::View::DropCallback GetDropCallback(
++      const ui::DropTargetEvent& event) override;
++
++  // views::DragController (drag source: the buttons and separators):
++  void WriteDragDataForView(views::View* sender,
++                            const gfx::Point& press_pt,
++                            ui::OSExchangeData* data) override;
++  int GetDragOperationsForView(views::View* sender,
++                               const gfx::Point& p) override;
++  bool CanStartDragForView(views::View* sender,
++                           const gfx::Point& press_pt,
++                           const gfx::Point& p) override;
 +
 +  // bookmarks::BookmarkModelObserver:
 +  void BookmarkModelLoaded(bool ids_reassigned) override;
@@ -572,6 +607,35 @@
 +    raw_ptr<views::LabelButton> button = nullptr;
 +    bool is_separator = false;
 +  };
++
++  // What a drag that is over the strip would do if dropped now.
++  struct DropInfo {
++    bookmarks::BookmarkNodeData data;
++    bool valid = false;
++    // Index in the bookmark bar folder (or, for a drop onto a folder, in that
++    // folder) the bookmark is inserted at.
++    size_t index = 0;
++    // Non-zero for a drop onto the folder button with this bookmark id.
++    int64_t into_folder_id = 0;
++    // Where to draw the insertion line (or the frame around the folder), in
++    // `contents_` coordinates.
++    gfx::Rect indicator;
++    ui::mojom::DragOperation operation = ui::mojom::DragOperation::kNone;
++  };
++
++  const bookmarks::BookmarkNode* GetNodeForView(const views::View* view) const;
++  void CalculateDropLocation(const gfx::Point& point_in_contents,
++                             const ui::DropTargetEvent& event,
++                             DropInfo& info);
++  void ShowDropIndicator(const DropInfo& info);
++  void HideDropIndicator();
++  void PerformDrop(const bookmarks::BookmarkNodeData data,
++                   const BookmarkParentFolder& parent_folder,
++                   size_t index,
++                   bool copy,
++                   const ui::DropTargetEvent& event,
++                   ui::mojom::DragOperation& output_drag_op,
++                   std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner);
 +
 +  // Rebuilds every button from the bookmark bar's children.
 +  void Rebuild();
@@ -624,6 +688,11 @@
 +  PrefChangeRegistrar pref_change_registrar_;
 +
 +  raw_ptr<views::ScrollView> scroll_view_ = nullptr;
++  // Insertion line / folder frame drawn over the strip while a drag is over it.
++  raw_ptr<views::View> drop_indicator_ = nullptr;
++  gfx::Rect drop_indicator_bounds_;
++  std::optional<DropInfo> drop_info_;
++  base::WeakPtrFactory<BookmarkSidebarView> drop_weak_factory_{this};
 +  raw_ptr<views::BoxLayoutView> contents_ = nullptr;
 +  std::vector<Entry> entries_;
 +
@@ -650,7 +719,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,913 @@
+@@ -0,0 +1,1180 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -672,6 +741,7 @@
 +#include "chrome/browser/favicon/favicon_utils.h"
 +#include "chrome/browser/profiles/profile.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_context_menu_controller.h"
++#include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_stats.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_ui_operations_helper.h"
 +#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -683,24 +753,34 @@
 +#include "chrome/grit/generated_resources.h"
 +#include "components/bookmarks/browser/bookmark_model.h"
 +#include "components/bookmarks/browser/bookmark_node.h"
++#include "components/bookmarks/browser/bookmark_node_data.h"
 +#include "components/bookmarks/browser/bookmark_utils.h"
++#include "components/bookmarks/common/bookmark_pref_names.h"
 +#include "components/prefs/pref_service.h"
 +#include "content/public/browser/page_navigator.h"
 +#include "content/public/common/referrer.h"
++#include "ui/base/clipboard/clipboard_format_type.h"
++#include "ui/base/dragdrop/drag_drop_types.h"
++#include "ui/base/dragdrop/drop_target_event.h"
++#include "ui/base/dragdrop/os_exchange_data.h"
 +#include "ui/base/l10n/l10n_util.h"
 +#include "ui/base/metadata/metadata_impl_macros.h"
 +#include "ui/base/models/image_model.h"
 +#include "ui/base/mojom/menu_source_type.mojom.h"
 +#include "ui/base/page_transition_types.h"
 +#include "ui/base/window_open_disposition_utils.h"
++#include "ui/color/color_id.h"
 +#include "ui/compositor/layer.h"
++#include "ui/compositor/layer_tree_owner.h"
 +#include "ui/events/event_constants.h"
 +#include "ui/gfx/canvas.h"
 +#include "ui/gfx/geometry/insets.h"
 +#include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/geometry/rect_conversions.h"
 +#include "ui/gfx/text_constants.h"
 +#include "ui/views/background.h"
 +#include "ui/views/border.h"
++#include "ui/views/button_drag_utils.h"
 +#include "ui/views/controls/button/label_button.h"
 +#include "ui/views/controls/menu/menu_item_view.h"
 +#include "ui/views/controls/menu/menu_model_adapter.h"
@@ -709,6 +789,7 @@
 +#include "ui/views/layout/box_layout.h"
 +#include "ui/views/layout/box_layout_view.h"
 +#include "ui/views/layout/fill_layout.h"
++#include "ui/views/view_class_properties.h"
 +#include "ui/views/widget/widget.h"
 +
 +namespace {
@@ -788,12 +869,12 @@
 +  base::RepeatingClosure on_closed_;
 +};
 +
-+constexpr int kButtonIconPadding = 8;
++constexpr int kButtonIconPadding = 5;
 +constexpr int kButtonHeight = 16 + 2 * kButtonIconPadding;
 +constexpr int kStripPadding = 3;
 +// Widest a button of a top/bottom strip gets while its title is shown.
 +constexpr int kMaxHorizontalButtonWidth = 200;
-+constexpr int kButtonSpacing = 2;
++constexpr int kButtonSpacing = 0;
 +
 +// A separator is an ordinary bookmark with this URL, so it is stored, synced
 +// and reordered like any other one. The sidebar draws it as a thin line
@@ -881,6 +962,13 @@
 +  contents->SetInsideBorderInsets(gfx::Insets(kStripPadding));
 +  contents->SetBetweenChildSpacing(kButtonSpacing);
 +  contents_ = scroll_view_->SetContents(std::move(contents));
++
++  auto drop_indicator = std::make_unique<views::View>();
++  drop_indicator->SetVisible(false);
++  drop_indicator->SetCanProcessEventsWithinSubtree(false);
++  drop_indicator->SetProperty(views::kViewIgnoredByLayoutKey, true);
++  drop_indicator->SetPaintToLayer();
++  drop_indicator_ = AddChildView(std::move(drop_indicator));
 +
 +  set_context_menu_controller(this);
 +  scroll_view_->set_context_menu_controller(this);
@@ -1124,9 +1212,13 @@
 +  // Like the bookmark bar: a right click on a bookmark acts on it, one on the
 +  // empty space acts on the whole bookmark bar.
 +  std::vector<int64_t> node_ids;
++  // Id 0 means "empty space", but it is also the id of the bookmark tree's
++  // root node, which the browser's menu cannot act on (it has no parent), so
++  // it must not be looked up.
 +  const bookmarks::BookmarkNode* context_node =
-+      model_ ? bookmarks::GetBookmarkNodeByID(model_, context_node_id_)
-+             : nullptr;
++      (model_ && context_node_id_ != 0)
++          ? bookmarks::GetBookmarkNodeByID(model_, context_node_id_)
++          : nullptr;
 +  BookmarkMergedSurfaceService* service =
 +      BookmarkMergedSurfaceServiceFactory::GetForProfile(
 +          browser_->GetProfile());
@@ -1282,6 +1374,9 @@
 +  contents_->SetSize(horizontal ? gfx::Size(preferred.width(), available.height())
 +                                : gfx::Size(available.width(), preferred.height()));
 +  LayoutSuperclass<views::View>(this);
++  if (drop_indicator_ && drop_indicator_->GetVisible()) {
++    drop_indicator_->SetBoundsRect(drop_indicator_bounds_);
++  }
 +}
 +
 +void BookmarkSidebarView::Rebuild() {
@@ -1307,6 +1402,7 @@
 +      entry.is_separator = true;
 +      auto separator = std::make_unique<SeparatorView>();
 +      separator->set_context_menu_controller(this);
++      separator->set_drag_controller(this);
 +      entry.view = contents_->AddChildView(std::move(separator));
 +    } else {
 +      entry.button = contents_->AddChildView(CreateButton(child.get()));
@@ -1334,6 +1430,7 @@
 +                                   ui::EF_MIDDLE_MOUSE_BUTTON);
 +  button->SetTooltipText(GetNodeTitle(node));
 +  button->set_context_menu_controller(this);
++  button->set_drag_controller(this);
 +
 +  button->SetImageModel(views::Button::STATE_NORMAL, GetIcon(node));
 +  return button;
@@ -1447,6 +1544,245 @@
 +    return;
 +  }
 +  OpenNode(node, event.flags());
++}
++
++const bookmarks::BookmarkNode* BookmarkSidebarView::GetNodeForView(
++    const views::View* view) const {
++  if (!model_) {
++    return nullptr;
++  }
++  for (const Entry& entry : entries_) {
++    if (entry.view == view) {
++      return bookmarks::GetBookmarkNodeByID(model_, entry.node_id);
++    }
++  }
++  return nullptr;
++}
++
++void BookmarkSidebarView::WriteDragDataForView(views::View* sender,
++                                               const gfx::Point& press_pt,
++                                               ui::OSExchangeData* data) {
++  const bookmarks::BookmarkNode* node = GetNodeForView(sender);
++  if (!node) {
++    return;
++  }
++  button_drag_utils::SetDragImage(
++      node->url(), GetNodeTitle(node), GetIcon(node).Rasterize(GetColorProvider()),
++      &press_pt, data);
++  bookmarks::BookmarkNodeData drag_data(node);
++  drag_data.Write(browser_->GetProfile()->GetPath(), data);
++}
++
++int BookmarkSidebarView::GetDragOperationsForView(views::View* sender,
++                                                  const gfx::Point& p) {
++  const bookmarks::BookmarkNode* node = GetNodeForView(sender);
++  return node ? chrome::GetBookmarkDragOperation(browser_->GetProfile(), node)
++              : ui::DragDropTypes::DRAG_NONE;
++}
++
++bool BookmarkSidebarView::CanStartDragForView(views::View* sender,
++                                              const gfx::Point& press_pt,
++                                              const gfx::Point& p) {
++  return views::View::ExceededDragThreshold(p - press_pt);
++}
++
++bool BookmarkSidebarView::GetDropFormats(
++    int* formats,
++    std::set<ui::ClipboardFormatType>* format_types) {
++  if (!model_ || !model_->loaded()) {
++    return false;
++  }
++  *formats = ui::OSExchangeData::URL;
++  format_types->insert(ui::ClipboardFormatType::BookmarkEntriesType());
++  return true;
++}
++
++bool BookmarkSidebarView::AreDropTypesRequired() {
++  return true;
++}
++
++bool BookmarkSidebarView::CanDrop(const ui::OSExchangeData& data) {
++  if (!model_ || !model_->loaded() ||
++      !GetPrefs(browser_)->GetBoolean(
++          bookmarks::prefs::kEditBookmarksEnabled)) {
++    return false;
++  }
++  drop_info_.emplace();
++  // One bookmark at a time, like the bookmark bar.
++  return drop_info_->data.Read(data) && drop_info_->data.size() == 1;
++}
++
++void BookmarkSidebarView::OnDragEntered(const ui::DropTargetEvent& event) {}
++
++int BookmarkSidebarView::OnDragUpdated(const ui::DropTargetEvent& event) {
++  if (!drop_info_) {
++    return ui::DragDropTypes::DRAG_NONE;
++  }
++  gfx::Point point = event.location();
++  views::View::ConvertPointToTarget(this, contents_, &point);
++  CalculateDropLocation(point, event, *drop_info_);
++  if (!drop_info_->valid) {
++    HideDropIndicator();
++    return ui::DragDropTypes::DRAG_NONE;
++  }
++  ShowDropIndicator(*drop_info_);
++  return static_cast<int>(drop_info_->operation);
++}
++
++void BookmarkSidebarView::OnDragExited() {
++  drop_info_.reset();
++  HideDropIndicator();
++}
++
++views::View::DropCallback BookmarkSidebarView::GetDropCallback(
++    const ui::DropTargetEvent& event) {
++  HideDropIndicator();
++  if (!drop_info_ || !drop_info_->valid ||
++      drop_info_->operation == ui::mojom::DragOperation::kNone) {
++    drop_info_.reset();
++    return base::NullCallback();
++  }
++
++  DropInfo info = std::move(*drop_info_);
++  drop_info_.reset();
++  BookmarkParentFolder parent_folder = BookmarkParentFolder::BookmarkBarFolder();
++  if (info.into_folder_id != 0) {
++    const bookmarks::BookmarkNode* folder =
++        bookmarks::GetBookmarkNodeByID(model_, info.into_folder_id);
++    if (!folder || !folder->is_folder()) {
++      return base::NullCallback();
++    }
++    parent_folder = BookmarkParentFolder::FromFolderNode(folder);
++  }
++  const bool copy = info.operation == ui::mojom::DragOperation::kCopy;
++  return base::BindOnce(&BookmarkSidebarView::PerformDrop,
++                        drop_weak_factory_.GetWeakPtr(), std::move(info.data),
++                        parent_folder, info.index, copy);
++}
++
++void BookmarkSidebarView::CalculateDropLocation(
++    const gfx::Point& point_in_contents,
++    const ui::DropTargetEvent& event,
++    DropInfo& info) {
++  info.valid = false;
++  info.into_folder_id = 0;
++  BookmarkMergedSurfaceService* service =
++      BookmarkMergedSurfaceServiceFactory::GetForProfile(
++          browser_->GetProfile());
++  if (!service || !model_) {
++    return;
++  }
++
++  const bool horizontal = IsHorizontal();
++  const int pos = horizontal ? point_in_contents.x() : point_in_contents.y();
++
++  // The pointer is either over a folder button's middle half (drop into the
++  // folder) or before/after the middle of a button (drop in between).
++  size_t slot = entries_.size();  // insert before entries_[slot]
++  const bookmarks::BookmarkNode* into_folder = nullptr;
++  for (size_t i = 0; i < entries_.size(); ++i) {
++    const gfx::Rect bounds = entries_[i].view->bounds();
++    const int start = horizontal ? bounds.x() : bounds.y();
++    const int end = horizontal ? bounds.right() : bounds.bottom();
++    if (pos >= end) {
++      continue;
++    }
++    const int length = end - start;
++    const bookmarks::BookmarkNode* node =
++        bookmarks::GetBookmarkNodeByID(model_, entries_[i].node_id);
++    if (node && node->is_folder() && pos >= start + length / 4 &&
++        pos < end - length / 4) {
++      into_folder = node;
++      slot = i;
++    } else {
++      slot = pos < start + length / 2 ? i : i + 1;
++    }
++    break;
++  }
++
++  BookmarkParentFolder parent_folder = BookmarkParentFolder::BookmarkBarFolder();
++  if (into_folder) {
++    parent_folder = BookmarkParentFolder::FromFolderNode(into_folder);
++    info.into_folder_id = into_folder->id();
++    info.index = service->GetChildrenCount(parent_folder);
++    info.indicator = entries_[slot].view->bounds();
++  } else {
++    info.index = service->GetChildrenCount(parent_folder);
++    if (slot < entries_.size()) {
++      if (const bookmarks::BookmarkNode* before =
++              bookmarks::GetBookmarkNodeByID(model_, entries_[slot].node_id)) {
++        info.index = service->GetIndexOf(before);
++      }
++    }
++    // A 2 px line on the boundary the bookmark would be inserted at.
++    constexpr int kLine = 2;
++    if (entries_.empty()) {
++      info.indicator = gfx::Rect(kStripPadding, kStripPadding,
++                                 horizontal ? kLine : kButtonHeight,
++                                 horizontal ? kButtonHeight : kLine);
++    } else {
++      const bool after_last = slot >= entries_.size();
++      const gfx::Rect bounds =
++          entries_[after_last ? entries_.size() - 1 : slot].view->bounds();
++      if (horizontal) {
++        info.indicator = gfx::Rect((after_last ? bounds.right() : bounds.x()) - 1,
++                                   bounds.y(), kLine, bounds.height());
++      } else {
++        info.indicator = gfx::Rect(bounds.x(),
++                                   (after_last ? bounds.bottom() : bounds.y()) - 1,
++                                   bounds.width(), kLine);
++      }
++    }
++  }
++
++  info.operation = chrome::GetBookmarkDropOperation(
++      browser_->GetProfile(), event, info.data, parent_folder, info.index);
++  info.valid = info.operation != ui::mojom::DragOperation::kNone;
++}
++
++void BookmarkSidebarView::ShowDropIndicator(const DropInfo& info) {
++  gfx::RectF rect(info.indicator);
++  views::View::ConvertRectToTarget(contents_, this, &rect);
++  drop_indicator_bounds_ = gfx::ToEnclosingRect(rect);
++  if (info.into_folder_id != 0) {
++    drop_indicator_->SetBackground(nullptr);
++    drop_indicator_->SetBorder(
++        views::CreateSolidBorder(2, ui::kColorFocusableBorderFocused));
++  } else {
++    drop_indicator_->SetBorder(nullptr);
++    drop_indicator_->SetBackground(
++        views::CreateSolidBackground(ui::kColorFocusableBorderFocused));
++  }
++  drop_indicator_->SetBoundsRect(drop_indicator_bounds_);
++  drop_indicator_->SetVisible(true);
++}
++
++void BookmarkSidebarView::HideDropIndicator() {
++  if (drop_indicator_) {
++    drop_indicator_->SetVisible(false);
++  }
++}
++
++void BookmarkSidebarView::PerformDrop(
++    const bookmarks::BookmarkNodeData data,
++    const BookmarkParentFolder& parent_folder,
++    size_t index,
++    bool copy,
++    const ui::DropTargetEvent& event,
++    ui::mojom::DragOperation& output_drag_op,
++    std::unique_ptr<ui::LayerTreeOwner> drag_image_layer_owner) {
++  BookmarkMergedSurfaceService* service =
++      BookmarkMergedSurfaceServiceFactory::GetForProfile(
++          browser_->GetProfile());
++  if (!service) {
++    output_drag_op = ui::mojom::DragOperation::kNone;
++    return;
++  }
++  output_drag_op =
++      BookmarkUIOperationsHelperMergedSurfaces(service, &parent_folder)
++          .DropBookmarks(browser_->GetProfile(), data, index, copy,
++                         chrome::BookmarkReorderDropTarget::kBookmarkBarView,
++                         browser_);
 +}
 +
 +void BookmarkSidebarView::AddSeparator() {

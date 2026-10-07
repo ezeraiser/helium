@@ -1480,6 +1480,16 @@
     "message": "Bir süredir bakmadığın sekmelerin kapladığı belleği küçültür. Sayfalar olduğu gibi kalır ve yeniden yüklenmez, ancak bir sekmeye dönmek biraz daha uzun sürebilir. Ses veya video oynatan sekmeler etkilenmez."
   },
   {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_LABEL",
+    "source": "Also free memory when the browser is in the background",
+    "message": "Tarayıcı arka plandayken de belleği boşalt"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION",
+    "source": "When all windows are minimized or hidden and nothing is playing, also shrinks the memory used by the browser and the graphics process itself. Bringing a window back can take a moment longer.",
+    "message": "Tüm pencereler küçültüldüğünde veya gizlendiğinde ve hiçbir şey oynatılmadığında, tarayıcının ve grafik işleminin kendi kapladığı belleği de küçültür. Bir pencereyi geri getirmek biraz daha uzun sürebilir."
+  },
+  {
     "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL",
     "source": "Wait before freeing memory",
     "message": "Belleği boşaltmadan önce bekle"

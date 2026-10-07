@@ -1405,6 +1405,18 @@
     "message": "Shrinks the memory used by tabs you have not looked at for a while. The pages stay exactly as they are and are not reloaded, but switching back to one can take a moment longer. Tabs that play audio or video are not affected."
   },
   {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that also shrinks the memory used by the browser itself while it is in the background.",
+    "message": "Also free memory when the browser is in the background"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that also shrinks the memory used by the browser itself while it is in the background.",
+    "message": "When all windows are minimized or hidden and nothing is playing, also shrinks the memory used by the browser and the graphics process itself. Bringing a window back can take a moment longer."
+  },
+  {
     "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL",
     "source": "chrome/app/settings_strings.grdp",
     "context": "Label for the drop-down that sets how long a tab must be inactive before its memory is shrunk.",
