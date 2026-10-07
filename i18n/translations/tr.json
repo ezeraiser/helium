@@ -1490,6 +1490,46 @@
     "message": "Tüm pencereler küçültüldüğünde veya gizlendiğinde ve hiçbir şey oynatılmadığında, tarayıcının ve grafik işleminin kendi kapladığı belleği de küçültür. Bir pencereyi geri getirmek biraz daha uzun sürebilir."
   },
   {
+    "name": "IDS_SETTINGS_TAB_FREEZING_LABEL",
+    "source": "Freeze tabs you are not using",
+    "message": "Kullanmadığın sekmeleri dondur"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_DESCRIPTION",
+    "source": "Tabs you have not used recently stop running in the background and use less memory. Tabs that play audio, may show notifications, or are in a call are never frozen.",
+    "message": "Yakın zamanda kullanmadığın sekmeler arka planda çalışmayı bırakır ve daha az bellek kullanır. Ses çalan, bildirim gösterebilen veya görüşmede olan sekmeler hiçbir zaman dondurulmaz."
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_PROTECTED_LABEL",
+    "source": "Recently used tabs that are never frozen",
+    "message": "Hiç dondurulmayan son kullanılan sekme sayısı"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_LABEL",
+    "source": "Wake frozen tabs",
+    "message": "Dondurulmuş sekmeleri uyandır"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_NEVER",
+    "source": "Never (only when you switch to them)",
+    "message": "Hiç (yalnızca sekmeye geçince)"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_5_MINUTES",
+    "source": "Every 5 minutes",
+    "message": "5 dakikada bir"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_1_MINUTE",
+    "source": "Every minute",
+    "message": "Dakikada bir"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_30_SECONDS",
+    "source": "Every 30 seconds",
+    "message": "30 saniyede bir"
+  },
+  {
     "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL",
     "source": "Wait before freeing memory",
     "message": "Belleği boşaltmadan önce bekle"

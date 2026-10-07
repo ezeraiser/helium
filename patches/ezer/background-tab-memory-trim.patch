@@ -92,7 +92,7 @@
        base::FeatureList::IsEnabled(features::kWebContentsDiscard);
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.h
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,167 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -211,8 +211,19 @@
 +  // capturing anything.
 +  static bool IsPageIdle(const PageNode* page_node);
 +
-+  // Whether there is at least one page and all of them are idle.
++  // Whether `page_node` is content the user looks at or hears (a tab, or an
++  // extension page): browser UI rendered as web pages (Tab Search, the side
++  // panel, DevTools, ...) is not, and some of it (Tab Search) is reported as
++  // visible all the time.
++  static bool IsContentPage(const PageNode* page_node);
++
++  // Whether there is at least one content page and all of them are idle.
 +  bool AllPagesIdle() const;
++
++  // The first content page that keeps the browser from being idle, or null.
++  const PageNode* FindBusyPage() const;
++  // Logs (once per page) why the browser and GPU processes are not trimmed.
++  void LogBusyPage(const PageNode* busy_page);
 +
 +  // Arms/fires the trim of the browser and GPU processes, see above.
 +  void UpdateBrowserProcessTrim(base::TimeTicks now,
@@ -231,6 +242,8 @@
 +  // the browser and GPU processes were already trimmed during this period.
 +  base::TimeTicks all_idle_since_;
 +  bool browser_processes_trimmed_ = false;
++  // Only compared, never dereferenced: the page last reported by LogBusyPage().
++  const PageNode* last_logged_busy_page_ = nullptr;
 +
 +  std::map<const ProcessNode*, ProcessState> states_;
 +
@@ -249,7 +262,7 @@
 +#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_BACKGROUND_TAB_TRIM_POLICY_H_
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.cc
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,393 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -533,15 +546,58 @@
 +           live_state->IsBeingMirrored());
 +}
 +
++// static
++bool BackgroundTabTrimPolicy::IsContentPage(const PageNode* page_node) {
++  return page_node->GetType() == PageType::kTab ||
++         page_node->GetType() == PageType::kExtension;
++}
++
 +bool BackgroundTabTrimPolicy::AllPagesIdle() const {
 +  bool has_page = false;
 +  for (const PageNode* page_node : GetOwningGraph()->GetAllPageNodes()) {
++    if (!IsContentPage(page_node)) {
++      continue;
++    }
 +    if (!IsPageIdle(page_node)) {
 +      return false;
 +    }
 +    has_page = true;
 +  }
 +  return has_page;
++}
++
++const PageNode* BackgroundTabTrimPolicy::FindBusyPage() const {
++  for (const PageNode* page_node : GetOwningGraph()->GetAllPageNodes()) {
++    if (IsContentPage(page_node) && !IsPageIdle(page_node)) {
++      return page_node;
++    }
++  }
++  return nullptr;
++}
++
++void BackgroundTabTrimPolicy::LogBusyPage(const PageNode* busy_page) {
++  if (busy_page == last_logged_busy_page_) {
++    return;
++  }
++  last_logged_busy_page_ = busy_page;
++  if (!busy_page) {
++    return;
++  }
++  const PageLiveStateDecorator::Data* live_state =
++      PageLiveStateDecorator::Data::FromPageNode(busy_page);
++  LOG(INFO) << "BackgroundTabTrim: the browser and GPU processes wait for a "
++               "page: type="
++            << static_cast<int>(busy_page->GetType())
++            << " visible=" << busy_page->IsVisible()
++            << " audible=" << busy_page->IsAudible()
++            << " pip=" << busy_page->HasPictureInPicture()
++            << " capturing_video=" << (live_state && live_state->IsCapturingVideo())
++            << " capturing_audio=" << (live_state && live_state->IsCapturingAudio())
++            << " capturing_window=" << (live_state && live_state->IsCapturingWindow())
++            << " capturing_display="
++            << (live_state && live_state->IsCapturingDisplay())
++            << " mirrored=" << (live_state && live_state->IsBeingMirrored())
++            << " host=" << busy_page->GetMainFrameUrl().GetHost();
 +}
 +
 +void BackgroundTabTrimPolicy::ResetBrowserProcessTrim() {
@@ -555,9 +611,11 @@
 +  if (!AllPagesIdle()) {
 +    // Something is on screen (or playing) again: forget, so that the browser
 +    // and GPU processes are trimmed again the next time everything is idle.
++    LogBusyPage(FindBusyPage());
 +    ResetBrowserProcessTrim();
 +    return;
 +  }
++  LogBusyPage(nullptr);
 +  if (all_idle_since_.is_null()) {
 +    all_idle_since_ = now;
 +  }
@@ -575,6 +633,7 @@
 +}
 +
 +void BackgroundTabTrimPolicy::TrimBrowserProcesses() {
++  LOG(INFO) << "BackgroundTabTrim: trimming the browser and GPU processes";
 +#if BUILDFLAG(IS_WIN)
 +  TrimProcessHandle(::GetCurrentProcess());
 +  for (const ProcessNode* process_node :

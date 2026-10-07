@@ -1459,6 +1459,54 @@
     "message": "5 minutes"
   },
   {
+    "name": "IDS_SETTINGS_TAB_FREEZING_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that freezes tabs that have not been used for a while.",
+    "message": "Freeze tabs you are not using"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that freezes tabs that have not been used for a while.",
+    "message": "Tabs you have not used recently stop running in the background and use less memory. Tabs that play audio, may show notifications, or are in a call are never frozen."
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_PROTECTED_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the drop-down that sets how many recently used tabs are never frozen.",
+    "message": "Recently used tabs that are never frozen"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the drop-down that sets how often frozen tabs are woken up briefly.",
+    "message": "Wake frozen tabs"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_NEVER",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: frozen tabs are never woken up until the user switches to them.",
+    "message": "Never (only when you switch to them)"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_5_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wake frozen tabs every 5 minutes.",
+    "message": "Every 5 minutes"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_1_MINUTE",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wake frozen tabs every minute.",
+    "message": "Every minute"
+  },
+  {
+    "name": "IDS_SETTINGS_TAB_FREEZING_UNFREEZE_30_SECONDS",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: wake frozen tabs every 30 seconds.",
+    "message": "Every 30 seconds"
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

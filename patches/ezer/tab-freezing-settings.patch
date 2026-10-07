@@ -1,0 +1,535 @@
+--- a/components/performance_manager/public/user_tuning/prefs.h
++++ b/components/performance_manager/public/user_tuning/prefs.h
+@@ -49,6 +49,17 @@
+ inline constexpr char kBackgroundTabTrimBrowserEnabled[] =
+     "helium.performance.background_tab_trim.browser_when_hidden";
+ constexpr int kDefaultBackgroundTabTrimDelaySeconds = 10;
++
++// Ezer: how the "infinite tabs" freezing (see FreezingPolicy) behaves. How many
++// of the most recently used tabs are never frozen, and how often (in seconds) a
++// frozen tab is woken up for a moment. Local state prefs; the master switch is
++// `kTabFreezingEnabled` above.
++inline constexpr char kTabFreezingProtectedTabs[] =
++    "helium.performance.tab_freezing.protected_tabs";
++inline constexpr char kTabFreezingUnfreezeIntervalSeconds[] =
++    "helium.performance.tab_freezing.unfreeze_interval_seconds";
++constexpr int kDefaultTabFreezingProtectedTabs = 2;
++constexpr int kDefaultTabFreezingUnfreezeIntervalSeconds = 60;
+ 
+ enum class MemorySaverModeAggressiveness {
+   kConservative = 0,
+--- a/components/performance_manager/user_tuning/prefs.cc
++++ b/components/performance_manager/user_tuning/prefs.cc
+@@ -52,6 +52,10 @@
+   registry->RegisterBooleanPref(kBackgroundTabTrimBrowserEnabled, false);
+   registry->RegisterIntegerPref(kBackgroundTabTrimDelaySeconds,
+                                 kDefaultBackgroundTabTrimDelaySeconds);
++  registry->RegisterIntegerPref(kTabFreezingProtectedTabs,
++                                kDefaultTabFreezingProtectedTabs);
++  registry->RegisterIntegerPref(kTabFreezingUnfreezeIntervalSeconds,
++                                kDefaultTabFreezingUnfreezeIntervalSeconds);
+ }
+ 
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -1408,6 +1408,14 @@
+   (*s_allowlist)[performance_manager::user_tuning::prefs::
+                      kBackgroundTabTrimDelaySeconds] =
+       settings_api::PrefType::kNumber;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kTabFreezingEnabled] = settings_api::PrefType::kBoolean;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kTabFreezingProtectedTabs] =
++      settings_api::PrefType::kNumber;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kTabFreezingUnfreezeIntervalSeconds] =
++      settings_api::PrefType::kNumber;
+   (*s_allowlist)
+       [performance_manager::user_tuning::prefs::kBatterySaverModeState] =
+           settings_api::PrefType::kNumber;
+--- a/components/performance_manager/public/features.h
++++ b/components/performance_manager/public/features.h
+@@ -189,6 +189,18 @@
+ BASE_DECLARE_FEATURE_PARAM(base::TimeDelta,
+                            kInfiniteTabsFreezing_UnfreezeDuration);
+ 
++// Ezer: the values the freezing policy actually uses for the three parameters
++// above. They are the parameters, unless the Performance settings set an
++// override with SetInfiniteTabsFreezingOverrides() (see
++// TabFreezingPrefsApplier); that can happen at any time.
++int GetInfiniteTabsFreezingNumProtectedTabs();
++base::TimeDelta GetInfiniteTabsFreezingUnfreezeInterval();
++base::TimeDelta GetInfiniteTabsFreezingUnfreezeDuration();
++void SetInfiniteTabsFreezingOverrides(int num_protected_tabs,
++                                      base::TimeDelta unfreeze_interval,
++                                      base::TimeDelta unfreeze_duration);
++void ClearInfiniteTabsFreezingOverrides();
++
+ // If enabled, eligible tabs may be frozen on Windows if the system is under
+ // memory pressure. A tab is eligible if it would be freezable by the
+ // kInfiniteTabsFreezing policy.
+--- a/components/performance_manager/features.cc
++++ b/components/performance_manager/features.cc
+@@ -6,6 +6,9 @@
+ // mechanisms and features in the performance_manager component.
+ 
+ #include "components/performance_manager/public/features.h"
++
++#include <atomic>
++#include <cstdint>
+ 
+ #include "base/feature_list.h"
+ #include "base/metrics/field_trial_params.h"
+@@ -232,6 +235,50 @@
+                    "unfreeze_duration",
+                    base::Seconds(5));
+ 
++namespace {
++
++// Ezer: overrides set from the Performance settings. A value <= 0 means "not
++// set": the feature parameter is used.
++std::atomic<int> g_num_protected_tabs_override{0};
++std::atomic<int64_t> g_unfreeze_interval_override_us{0};
++std::atomic<int64_t> g_unfreeze_duration_override_us{0};
++
++}  // namespace
++
++int GetInfiniteTabsFreezingNumProtectedTabs() {
++  const int value = g_num_protected_tabs_override.load(std::memory_order_relaxed);
++  return value > 0 ? value : kInfiniteTabsFreezing_NumProtectedTabs.Get();
++}
++
++base::TimeDelta GetInfiniteTabsFreezingUnfreezeInterval() {
++  const int64_t value =
++      g_unfreeze_interval_override_us.load(std::memory_order_relaxed);
++  return value > 0 ? base::Microseconds(value)
++                   : kInfiniteTabsFreezing_UnfreezeInterval.Get();
++}
++
++base::TimeDelta GetInfiniteTabsFreezingUnfreezeDuration() {
++  const int64_t value =
++      g_unfreeze_duration_override_us.load(std::memory_order_relaxed);
++  return value > 0 ? base::Microseconds(value)
++                   : kInfiniteTabsFreezing_UnfreezeDuration.Get();
++}
++
++void SetInfiniteTabsFreezingOverrides(int num_protected_tabs,
++                                      base::TimeDelta unfreeze_interval,
++                                      base::TimeDelta unfreeze_duration) {
++  g_num_protected_tabs_override.store(num_protected_tabs,
++                                      std::memory_order_relaxed);
++  g_unfreeze_interval_override_us.store(unfreeze_interval.InMicroseconds(),
++                                        std::memory_order_relaxed);
++  g_unfreeze_duration_override_us.store(unfreeze_duration.InMicroseconds(),
++                                        std::memory_order_relaxed);
++}
++
++void ClearInfiniteTabsFreezingOverrides() {
++  SetInfiniteTabsFreezingOverrides(0, base::TimeDelta(), base::TimeDelta());
++}
++
+ BASE_FEATURE(kInfiniteTabsFreezingOnMemoryPressure,
+              base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+--- a/components/performance_manager/freezing/freezing_policy.cc
++++ b/components/performance_manager/freezing/freezing_policy.cc
+@@ -130,22 +130,22 @@
+   GetCurrentOrNextUnfreezePeriodStart(base::LiveTicks now) const {
+     const base::LiveTicks next_unfreeze_time = now.SnappedToNextTick(
+         *periodic_unfreeze_phase,
+-        features::kInfiniteTabsFreezing_UnfreezeInterval.Get());
++        features::GetInfiniteTabsFreezingUnfreezeInterval());
+     const base::LiveTicks previous_unfreeze_time =
+         next_unfreeze_time -
+-        features::kInfiniteTabsFreezing_UnfreezeInterval.Get();
++        features::GetInfiniteTabsFreezingUnfreezeInterval();
+     CHECK_LT(previous_unfreeze_time, now);
+ 
+     if ((previous_unfreeze_time +
+-         features::kInfiniteTabsFreezing_UnfreezeDuration.Get()) > now) {
++         features::GetInfiniteTabsFreezingUnfreezeDuration()) > now) {
+       return {previous_unfreeze_time,
+               previous_unfreeze_time +
+-                  features::kInfiniteTabsFreezing_UnfreezeDuration.Get()};
++                  features::GetInfiniteTabsFreezingUnfreezeDuration()};
+     }
+ 
+     return {next_unfreeze_time,
+             next_unfreeze_time +
+-                features::kInfiniteTabsFreezing_UnfreezeDuration.Get()};
++                features::GetInfiniteTabsFreezingUnfreezeDuration()};
+   }
+ 
+   // Returns true if `now` is within a periodic unfreeze period for this page.
+@@ -1229,19 +1229,18 @@
+ }
+ 
+ void FreezingPolicy::MaybePopFromMostRecentlyUsedList() {
+-  const int num_protected_tabs =
+-      num_visible_tabs_ + base::checked_cast<int>(most_recently_used_.size());
+-
+-  if (num_protected_tabs <=
+-          features::kInfiniteTabsFreezing_NumProtectedTabs.Get() ||
+-      most_recently_used_.empty()) {
+-    return;
+-  }
+-
+-  const PageNode* back = most_recently_used_.back();
+-  most_recently_used_.pop_back();
+-  OnCannotFreezeReasonChange(back, /*add=*/false,
+-                             CannotFreezeReason::kMostRecentlyUsed);
++  // Ezer: a loop rather than a single pop. The limit can be lowered at runtime
++  // (Performance settings), which leaves more than one entry too many, and
++  // CheckMostRecentlyUsedListSize() below would crash on that.
++  while (!most_recently_used_.empty() &&
++         num_visible_tabs_ +
++                 base::checked_cast<int>(most_recently_used_.size()) >
++             features::GetInfiniteTabsFreezingNumProtectedTabs()) {
++    const PageNode* back = most_recently_used_.back();
++    most_recently_used_.pop_back();
++    OnCannotFreezeReasonChange(back, /*add=*/false,
++                               CannotFreezeReason::kMostRecentlyUsed);
++  }
+ 
+   // Check that removing one tab from `most_recently_used_` was sufficient to
+   // respect the limit. This should be the case if this method is called
+@@ -1261,7 +1260,7 @@
+   // visible tabs must be below or at the limit.
+   CHECK_LE(
+       num_visible_tabs_ + base::checked_cast<int>(most_recently_used_.size()),
+-      features::kInfiniteTabsFreezing_NumProtectedTabs.Get(),
++      features::GetInfiniteTabsFreezingNumProtectedTabs(),
+       base::NotFatalUntil::M140);
+ }
+ 
+@@ -1461,7 +1460,7 @@
+ base::LiveTicks FreezingPolicy::GenerateRandomPeriodicUnfreezePhase() const {
+   return base::LiveTicks() +
+          base::Milliseconds(base::RandIntInclusive(
+-             0, features::kInfiniteTabsFreezing_UnfreezeInterval.Get()
++             0, features::GetInfiniteTabsFreezingUnfreezeInterval()
+                     .InMilliseconds()));
+ }
+ 
+--- a/chrome/browser/performance_manager/BUILD.gn
++++ b/chrome/browser/performance_manager/BUILD.gn
+@@ -21,6 +21,7 @@
+     "policies/background_tab_loading_policy_helpers.h",
+     "policies/background_tab_trim_policy.h",
+     "policies/best_effort_task_inhibiting_policy.h",
++    "policies/tab_freezing_prefs_applier.h",
+     "policies/cannot_discard_reason.h",
+     "policies/discard_eligibility_policy.h",
+     "policies/frame_throttling_policy.h",
+@@ -145,6 +146,7 @@
+     "policies/background_tab_loading_policy_helpers.cc",
+     "policies/background_tab_trim_policy.cc",
+     "policies/best_effort_task_inhibiting_policy.cc",
++    "policies/tab_freezing_prefs_applier.cc",
+     "policies/cannot_discard_reason.cc",
+     "policies/discard_eligibility_policy.cc",
+     "policies/frame_throttling_policy.cc",
+--- a/chrome/browser/performance_manager/chrome_browser_main_extra_parts_performance_manager.cc
++++ b/chrome/browser/performance_manager/chrome_browser_main_extra_parts_performance_manager.cc
+@@ -27,6 +27,7 @@
+ #include "chrome/browser/performance_manager/policies/best_effort_task_inhibiting_policy.h"
+ #include "chrome/browser/performance_manager/policies/frame_throttling_policy.h"
+ #include "chrome/browser/performance_manager/policies/freezing_opt_out_checker.h"
++#include "chrome/browser/performance_manager/policies/tab_freezing_prefs_applier.h"
+ #include "chrome/browser/performance_manager/policies/keep_alive_dse_policy.h"
+ #include "chrome/browser/performance_manager/policies/page_discarding_helper.h"
+ #include "chrome/browser/performance_manager/policies/policy_features.h"
+@@ -240,6 +241,9 @@
+   graph->PassToGraph(std::make_unique<performance_manager::FreezingPolicy>(
+       std::make_unique<FreezingDiscarder>(),
+       std::move(freezing_opt_out_checker)));
++  // Ezer: lets the Performance settings tune the freezing policy.
++  graph->PassToGraph(
++      std::make_unique<performance_manager::TabFreezingPrefsApplier>());
+ 
+   graph->PassToGraph(
+       std::make_unique<performance_manager::policies::MemorySaverModePolicy>());
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -359,6 +359,30 @@
+     </message>
+     <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION" desc="Description for the toggle that also shrinks the memory used by the browser itself while it is in the background.">
+       When all windows are minimized or hidden and nothing is playing, also shrinks the memory used by the browser and the graphics process itself. Bringing a window back can take a moment longer.
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_LABEL" desc="Label for the toggle that freezes tabs that have not been used for a while.">
++      Freeze tabs you are not using
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_DESCRIPTION" desc="Description for the toggle that freezes tabs that have not been used for a while.">
++      Tabs you have not used recently stop running in the background and use less memory. Tabs that play audio, may show notifications, or are in a call are never frozen.
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_PROTECTED_LABEL" desc="Label for the drop-down that sets how many recently used tabs are never frozen.">
++      Recently used tabs that are never frozen
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_LABEL" desc="Label for the drop-down that sets how often frozen tabs are woken up briefly.">
++      Wake frozen tabs
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_NEVER" desc="Drop-down option: frozen tabs are never woken up until the user switches to them.">
++      Never (only when you switch to them)
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_5_MINUTES" desc="Drop-down option: wake frozen tabs every 5 minutes.">
++      Every 5 minutes
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_1_MINUTE" desc="Drop-down option: wake frozen tabs every minute.">
++      Every minute
++    </message>
++    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_30_SECONDS" desc="Drop-down option: wake frozen tabs every 30 seconds.">
++      Every 30 seconds
+     </message>
+     <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL" desc="Label for the drop-down that sets how long a tab must be inactive before its memory is shrunk.">
+       Wait before freeing memory
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -1318,6 +1318,22 @@
+        IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_LABEL},
+       {"backgroundTabTrimBrowserDescription",
+        IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION},
++      {"tabFreezingLabel",
++       IDS_SETTINGS_TAB_FREEZING_LABEL},
++      {"tabFreezingDescription",
++       IDS_SETTINGS_TAB_FREEZING_DESCRIPTION},
++      {"tabFreezingProtectedLabel",
++       IDS_SETTINGS_TAB_FREEZING_PROTECTED_LABEL},
++      {"tabFreezingUnfreezeLabel",
++       IDS_SETTINGS_TAB_FREEZING_UNFREEZE_LABEL},
++      {"tabFreezingUnfreezeNever",
++       IDS_SETTINGS_TAB_FREEZING_UNFREEZE_NEVER},
++      {"tabFreezingUnfreeze5Minutes",
++       IDS_SETTINGS_TAB_FREEZING_UNFREEZE_5_MINUTES},
++      {"tabFreezingUnfreeze1Minute",
++       IDS_SETTINGS_TAB_FREEZING_UNFREEZE_1_MINUTE},
++      {"tabFreezingUnfreeze30Seconds",
++       IDS_SETTINGS_TAB_FREEZING_UNFREEZE_30_SECONDS},
+       {"backgroundTabTrimDelayLabel",
+        IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL},
+       {"backgroundTabTrimDelay5Seconds",
+--- a/chrome/browser/resources/settings/performance_page/memory_page.ts
++++ b/chrome/browser/resources/settings/performance_page/memory_page.ts
+@@ -33,6 +33,8 @@
+ export const BACKGROUND_TAB_TRIM_ENABLED_PREF =
+     'helium.performance.background_tab_trim.enabled';
+ 
++export const TAB_FREEZING_ENABLED_PREF = 'performance_tuning.tab_freezing.enabled';
++
+ const SettingsMemoryPageElementBase = PrefServiceObserverMixinLit(CrLitElement);
+ 
+ export interface SettingsMemoryPageElement {
+@@ -61,6 +63,9 @@
+       memorySaverStatePref_: {type: Object},
+       backgroundTrimEnabledPref_: {type: Object},
+       backgroundTrimDelayOptions_: {type: Array},
++      tabFreezingEnabledPref_: {type: Object},
++      tabFreezingProtectedOptions_: {type: Array},
++      tabFreezingUnfreezeOptions_: {type: Array},
+     };
+   }
+ 
+@@ -83,6 +88,22 @@
+     {value: 300, name: loadTimeData.getString('backgroundTabTrimDelay5Minutes')},
+   ];
+ 
++  protected accessor tabFreezingEnabledPref_:
++      chrome.settingsPrivate.PrefObject|undefined;
++
++  // How many of the most recently used tabs are never frozen.
++  protected accessor tabFreezingProtectedOptions_: DropdownMenuOptionList =
++      [1, 2, 3, 5, 8, 10].map(n => ({value: n, name: String(n)}));
++
++  // Values are seconds, matching the unfreeze_interval_seconds pref. A day
++  // stands for "never": the policy wakes a tab up at most once in that time.
++  protected accessor tabFreezingUnfreezeOptions_: DropdownMenuOptionList = [
++    {value: 86400, name: loadTimeData.getString('tabFreezingUnfreezeNever')},
++    {value: 300, name: loadTimeData.getString('tabFreezingUnfreeze5Minutes')},
++    {value: 60, name: loadTimeData.getString('tabFreezingUnfreeze1Minute')},
++    {value: 30, name: loadTimeData.getString('tabFreezingUnfreeze30Seconds')},
++  ];
++
+   private metricsProxy_: PerformanceMetricsProxy =
+       PerformanceMetricsProxyImpl.getInstance();
+ 
+@@ -91,6 +112,7 @@
+     this.mirrorPref(MEMORY_SAVER_MODE_PREF, 'memorySaverStatePref_');
+     this.mirrorPref(
+         BACKGROUND_TAB_TRIM_ENABLED_PREF, 'backgroundTrimEnabledPref_');
++    this.mirrorPref(TAB_FREEZING_ENABLED_PREF, 'tabFreezingEnabledPref_');
+   }
+ 
+   protected onMemorySaverModeChange_() {
+@@ -116,6 +138,10 @@
+ 
+   protected isBackgroundTrimEnabled_(): boolean {
+     return !!this.backgroundTrimEnabledPref_?.value;
++  }
++
++  protected isTabFreezingEnabled_(): boolean {
++    return !!this.tabFreezingEnabledPref_?.value;
+   }
+ 
+   protected onMemorySaverSubLabelLinkClicked_() {
+--- a/chrome/browser/resources/settings/performance_page/memory_page.html.ts
++++ b/chrome/browser/resources/settings/performance_page/memory_page.html.ts
+@@ -77,5 +77,32 @@
+         sub-label="$i18n{backgroundTabTrimBrowserDescription}">
+     </settings-toggle-button>
+   </cr-collapse>
++  <settings-toggle-button id="tabFreezingToggle"
++      pref-key="performance_tuning.tab_freezing.enabled"
++      label="$i18n{tabFreezingLabel}"
++      sub-label="$i18n{tabFreezingDescription}">
++  </settings-toggle-button>
++  <cr-collapse ?opened="${this.isTabFreezingEnabled_()}">
++    <div class="cr-row continuation">
++      <div class="flex cr-padded-text" aria-hidden="true">
++        $i18n{tabFreezingProtectedLabel}
++      </div>
++      <settings-dropdown-menu id="tabFreezingProtected"
++          label="$i18n{tabFreezingProtectedLabel}"
++          pref-key="helium.performance.tab_freezing.protected_tabs"
++          .menuOptions="${this.tabFreezingProtectedOptions_}">
++      </settings-dropdown-menu>
++    </div>
++    <div class="cr-row continuation">
++      <div class="flex cr-padded-text" aria-hidden="true">
++        $i18n{tabFreezingUnfreezeLabel}
++      </div>
++      <settings-dropdown-menu id="tabFreezingUnfreeze"
++          label="$i18n{tabFreezingUnfreezeLabel}"
++          pref-key="helium.performance.tab_freezing.unfreeze_interval_seconds"
++          .menuOptions="${this.tabFreezingUnfreezeOptions_}">
++      </settings-dropdown-menu>
++    </div>
++  </cr-collapse>
+ </settings-section><!--_html_template_end_-->`;
+ }
+--- /dev/null
++++ b/chrome/browser/performance_manager/policies/tab_freezing_prefs_applier.h
+@@ -0,0 +1,37 @@
++// Copyright 2026 The Helium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_TAB_FREEZING_PREFS_APPLIER_H_
++#define CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_TAB_FREEZING_PREFS_APPLIER_H_
++
++#include "components/performance_manager/public/graph/graph.h"
++#include "components/prefs/pref_change_registrar.h"
++
++namespace performance_manager {
++
++// Ezer: hands the "infinite tabs" freezing settings (how many recently used
++// tabs are never frozen, how often a frozen tab is woken up) from the local
++// state prefs, which the Performance settings page edits, to FreezingPolicy.
++// The values are applied right away and whenever a pref changes.
++class TabFreezingPrefsApplier : public GraphOwned {
++ public:
++  TabFreezingPrefsApplier();
++  ~TabFreezingPrefsApplier() override;
++
++  TabFreezingPrefsApplier(const TabFreezingPrefsApplier&) = delete;
++  TabFreezingPrefsApplier& operator=(const TabFreezingPrefsApplier&) = delete;
++
++  // GraphOwned:
++  void OnPassedToGraph(Graph* graph) override;
++  void OnTakenFromGraph(Graph* graph) override;
++
++ private:
++  void Apply();
++
++  PrefChangeRegistrar pref_change_registrar_;
++};
++
++}  // namespace performance_manager
++
++#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_TAB_FREEZING_PREFS_APPLIER_H_
+--- /dev/null
++++ b/chrome/browser/performance_manager/policies/tab_freezing_prefs_applier.cc
+@@ -0,0 +1,84 @@
++// Copyright 2026 The Helium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/performance_manager/policies/tab_freezing_prefs_applier.h"
++
++#include <algorithm>
++
++#include "base/functional/bind.h"
++#include "base/time/time.h"
++#include "chrome/browser/browser_process.h"
++#include "components/performance_manager/public/features.h"
++#include "components/performance_manager/public/user_tuning/prefs.h"
++#include "components/prefs/pref_service.h"
++
++namespace performance_manager {
++
++namespace {
++
++// Bounds for hand-edited prefs. A day is the largest interval: FreezingPolicy
++// picks a random phase of up to one interval as an `int` of milliseconds.
++constexpr int kMaxProtectedTabs = 100000;
++constexpr int kMinIntervalSeconds = 10;
++constexpr int kMaxIntervalSeconds = 24 * 60 * 60;
++
++// How long a frozen tab is awake each time, for the given interval. Never zero:
++// FreezingPolicy checks that the end of a wake-up period is after its start.
++base::TimeDelta UnfreezeDurationFor(int interval_seconds) {
++  if (interval_seconds >= kMaxIntervalSeconds) {
++    // "Never": woken up for a moment once a day.
++    return base::Milliseconds(1);
++  }
++  if (interval_seconds >= 300) {
++    return base::Seconds(3);
++  }
++  if (interval_seconds >= 60) {
++    return base::Seconds(4);
++  }
++  return base::Seconds(5);
++}
++
++}  // namespace
++
++TabFreezingPrefsApplier::TabFreezingPrefsApplier() = default;
++TabFreezingPrefsApplier::~TabFreezingPrefsApplier() = default;
++
++void TabFreezingPrefsApplier::OnPassedToGraph(Graph* graph) {
++  if (PrefService* local_state = g_browser_process->local_state()) {
++    pref_change_registrar_.Init(local_state);
++    for (const char* pref :
++         {user_tuning::prefs::kTabFreezingProtectedTabs,
++          user_tuning::prefs::kTabFreezingUnfreezeIntervalSeconds}) {
++      pref_change_registrar_.Add(
++          pref, base::BindRepeating(&TabFreezingPrefsApplier::Apply,
++                                    base::Unretained(this)));
++    }
++  }
++  Apply();
++}
++
++void TabFreezingPrefsApplier::OnTakenFromGraph(Graph* graph) {
++  pref_change_registrar_.Reset();
++  features::ClearInfiniteTabsFreezingOverrides();
++}
++
++void TabFreezingPrefsApplier::Apply() {
++  PrefService* local_state = g_browser_process->local_state();
++  if (!local_state) {
++    return;
++  }
++  const int protected_tabs =
++      std::clamp(local_state->GetInteger(
++                     user_tuning::prefs::kTabFreezingProtectedTabs),
++                 1, kMaxProtectedTabs);
++  const int interval_seconds = std::clamp(
++      local_state->GetInteger(
++          user_tuning::prefs::kTabFreezingUnfreezeIntervalSeconds),
++      kMinIntervalSeconds, kMaxIntervalSeconds);
++  features::SetInfiniteTabsFreezingOverrides(
++      protected_tabs, base::Seconds(interval_seconds),
++      UnfreezeDurationFor(interval_seconds));
++}
++
++}  // namespace performance_manager
