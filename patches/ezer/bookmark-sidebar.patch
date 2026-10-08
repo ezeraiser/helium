@@ -1,10 +1,9 @@
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -643,6 +643,26 @@
- // collapsed vertical tab strip before it expands.
+@@ -644,6 +644,26 @@
  inline constexpr char kHeliumVerticalExpandOnHoverDelayMs[] =
      "helium.browser.vertical_expand_on_hover_delay_ms";
-+
+ 
 +// A boolean pref set to true if the bookmark sidebar (an icon strip showing
 +// the bookmark bar's items along a window edge) should be shown.
 +inline constexpr char kHeliumBookmarkSidebarVisible[] =
@@ -24,9 +23,10 @@
 +// bookmark sidebar before it expands.
 +inline constexpr char kHeliumBookmarkSidebarExpandDelayMs[] =
 +    "helium.browser.bookmark_sidebar.expand_delay_ms";
- 
++
  // A boolean pref set to true if zen mode is enabled.
  inline constexpr char kHeliumZenMode[] = "helium.browser.zen_mode";
+ 
 --- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
 +++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
 @@ -35,6 +35,12 @@
@@ -61,11 +61,10 @@
  
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -321,6 +321,33 @@
-     </message>
+@@ -322,6 +322,33 @@
      <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
        Delay
-+    </message>
+     </message>
 +    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_SHOW" desc="Label for the toggle that shows the bookmark sidebar, an icon-only strip of the user's bookmarks docked to a window edge.">
 +      Show bookmark sidebar
 +    </message>
@@ -92,12 +91,13 @@
 +    </message>
 +    <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR" desc="Context menu item that removes the separator line that was right-clicked in the bookmark sidebar.">
 +      Remove separator
-     </message>
++    </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
+     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -611,6 +611,18 @@
+@@ -612,6 +612,18 @@
         IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_ICON},
        {"verticalTabsExpandOnHoverDelay",
         IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY},
@@ -127,7 +127,7 @@
  
        // <if expr="is_linux">
        themeSystemThemePref_: {type: Object},
-@@ -190,6 +192,7 @@
+@@ -191,6 +193,7 @@
        sidePanelAlignmentOptions_: {type: Array},
        configurableSidePanels_: {type: Array},
        expandOnHoverDelayOptions_: {type: Array},
@@ -135,33 +135,33 @@
      };
    }
  
-@@ -229,6 +232,10 @@
-   protected accessor verticalTabsCollapsedStatePref_: PrefObject<boolean>|
+@@ -231,6 +234,10 @@
        undefined = undefined;
    protected accessor heliumVerticalExpandOnHoverPref_: PrefObject<boolean>|
-+      undefined = undefined;
+       undefined = undefined;
 +  protected accessor bookmarkSidebarVisiblePref_: PrefObject<boolean>|
 +      undefined = undefined;
 +  protected accessor bookmarkSidebarExpandOnHoverPref_: PrefObject<boolean>|
-       undefined = undefined;
++      undefined = undefined;
  
    // <if expr="is_linux">
-@@ -301,6 +308,14 @@
-   protected accessor sidePanelAlignmentOptions_: DropdownMenuOptionList = [
-     {value: 'false', name: loadTimeData.getString('uiFeatureAlignLeft')},
+   protected accessor themeSystemThemePref_: PrefObject<number>|undefined =
+@@ -304,6 +311,14 @@
      {value: 'true', name: loadTimeData.getString('uiFeatureAlignRight')},
-+  ];
-+
+   ];
+ 
 +  // Values match the position pref (0 = left, 1 = right, 2 = top, 3 = bottom).
 +  protected accessor bookmarkSidebarPositionOptions_: DropdownMenuOptionList = [
 +    {value: 0, name: loadTimeData.getString('bookmarkSidebarPositionLeft')},
 +    {value: 1, name: loadTimeData.getString('bookmarkSidebarPositionRight')},
 +    {value: 2, name: loadTimeData.getString('bookmarkSidebarPositionTop')},
 +    {value: 3, name: loadTimeData.getString('bookmarkSidebarPositionBottom')},
-   ];
- 
++  ];
++
    // Ezer: values are milliseconds, stored directly in
-@@ -390,6 +405,9 @@
+   // helium.browser.vertical_expand_on_hover_delay_ms.
+   protected accessor expandOnHoverDelayOptions_: DropdownMenuOptionList = [
+@@ -393,6 +408,9 @@
        'vertical_tabs.collapsed_state': 'verticalTabsCollapsedStatePref_',
        'helium.browser.vertical_expand_on_hover':
            'heliumVerticalExpandOnHoverPref_',
@@ -224,7 +224,7 @@
  #define IDC_ADD_NEW_TAB_TO_GROUP      34100
 --- a/chrome/browser/ui/accelerator_table.cc
 +++ b/chrome/browser/ui/accelerator_table.cc
-@@ -132,6 +132,8 @@
+@@ -136,6 +136,8 @@
  #endif  // BUILDFLAG(IS_LINUX)
      {ui::VKEY_B, ui::EF_SHIFT_DOWN | ui::EF_PLATFORM_ACCELERATOR,
       IDC_SHOW_BOOKMARK_BAR},
@@ -235,7 +235,7 @@
      {ui::VKEY_0, ui::EF_PLATFORM_ACCELERATOR, IDC_ZOOM_NORMAL},
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1527,6 +1527,13 @@
+@@ -1532,6 +1532,13 @@
        }
        break;
      }
@@ -249,7 +249,7 @@
      // Hosted App commands
      case IDC_COPY_URL:
        CopyURL(browser_, browser_->tab_strip_model()->GetActiveWebContents());
-@@ -2080,6 +2087,7 @@
+@@ -2076,6 +2083,7 @@
    // These are always enabled; the menu determines their menu item visibility.
    command_updater_->UpdateCommandEnabled(IDC_UPGRADE_DIALOG, true);
    command_updater_->UpdateCommandEnabled(IDC_HELIUM_SERVICES_OPEN, true);
@@ -259,7 +259,7 @@
    command_updater_->UpdateCommandEnabled(IDC_SET_BROWSER_AS_DEFAULT, true);
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -2544,6 +2544,8 @@
+@@ -2733,6 +2733,8 @@
        "views/frame/app_menu_button.h",
        "views/frame/base_tab_strip_region_view.cc",
        "views/frame/base_tab_strip_region_view.h",
@@ -283,12 +283,12 @@
    raw_ptr<VerticalTabStripBackgroundBlurBackdrop>
        vertical_tab_strip_background_blur_backdrop = nullptr;
 +  raw_ptr<BookmarkSidebarView> bookmark_sidebar = nullptr;
-   raw_ptr<OrganizerPanelView> organizer_panel_container = nullptr;
+   raw_ptr<OrganizerTrayView> organizer_tray = nullptr;
    raw_ptr<views::View> toolbar = nullptr;
    raw_ptr<InfoBarContainerView> infobar_container = nullptr;
 --- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
 +++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
-@@ -29,6 +29,7 @@
+@@ -30,6 +30,7 @@
  #include "chrome/browser/ui/views/animations/side_panel_animations.h"
  #include "chrome/browser/ui/views/animations/tab_strip_animations.h"
  #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
@@ -296,7 +296,7 @@
  #include "chrome/browser/ui/views/frame/browser_view.h"
  #include "chrome/browser/ui/views/frame/custom_corners.h"
  #include "chrome/browser/ui/views/frame/custom_corners_background.h"
-@@ -1385,6 +1386,48 @@
+@@ -1386,6 +1387,48 @@
    CHECK(IsParentedToAndVisible(views().multi_contents_view,
                                 views().browser_view));
  
@@ -347,7 +347,7 @@
    // panel may exceed the width of the window. In this case, the contents pane
 --- a/chrome/browser/ui/bookmarks/bookmark_bar_controller.cc
 +++ b/chrome/browser/ui/bookmarks/bookmark_bar_controller.cc
-@@ -84,6 +84,12 @@
+@@ -85,6 +85,12 @@
        base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
                            base::Unretained(this),
                            StateChangeReason::kPrefChange));
@@ -360,7 +360,7 @@
    pref_change_registrar_.Add(
        bookmarks::prefs::kShowTabGroupsInBookmarkBar,
        base::BindRepeating(&BookmarkBarController::UpdateBookmarkBarState,
-@@ -231,6 +237,11 @@
+@@ -232,6 +238,11 @@
    }
  
    PrefService* prefs = profile->GetPrefs();
@@ -374,7 +374,7 @@
            ? static_cast<bookmarks::BookmarkBarVisibilityState>(
 --- a/chrome/browser/ui/views/frame/browser_view.h
 +++ b/chrome/browser/ui/views/frame/browser_view.h
-@@ -79,6 +79,7 @@
+@@ -81,6 +81,7 @@
  class AppMenuControl;
  class BookmarkBarController;
  class BookmarkBarView;
@@ -382,7 +382,7 @@
  class BrowserWindowInterface;
  class BrowserViewLayout;
  class ContentsContainerView;
-@@ -1303,6 +1304,10 @@
+@@ -1304,6 +1305,10 @@
    raw_ptr<VerticalTabStripBackgroundBlurBackdrop>
        vertical_tab_strip_background_blur_backdrop_ = nullptr;
  
@@ -391,11 +391,11 @@
 +  raw_ptr<BookmarkSidebarView> bookmark_sidebar_view_ = nullptr;
 +
    // The view responsible for housing the contents of the organizer panel.
-   raw_ptr<OrganizerPanelView> organizer_panel_container_ = nullptr;
+   raw_ptr<OrganizerTrayView> organizer_tray_ = nullptr;
  
 --- a/chrome/browser/ui/views/frame/browser_view.cc
 +++ b/chrome/browser/ui/views/frame/browser_view.cc
-@@ -164,6 +164,7 @@
+@@ -166,6 +166,7 @@
  #include "chrome/browser/ui/views/find_bar_host.h"
  #include "chrome/browser/ui/views/find_bar_owner.h"
  #include "chrome/browser/ui/views/frame/app_menu_button.h"
@@ -403,34 +403,34 @@
  #include "chrome/browser/ui/views/frame/browser_frame_view.h"
  #include "chrome/browser/ui/views/frame/browser_native_widget.h"
  #include "chrome/browser/ui/views/frame/browser_widget.h"
-@@ -1099,6 +1100,11 @@
-     horizontal_tab_strip_region_view_->InitializeTabStrip();
-   }
- 
+@@ -1101,6 +1102,11 @@
+     auto vertical_tab_strip_container =
+         std::make_unique<VerticalTabStripRegionView>(
+             vertical_tab_strip_state_controller,
 +  if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
 +    bookmark_sidebar_view_ = AddChildView(
 +        std::make_unique<BookmarkSidebarView>(browser_.get()));
 +  }
 +
-   auto* const organizer_panel_state_controller =
-       OrganizerPanelStateController::From(browser_);
-   if (organizer_panel_state_controller) {
-@@ -1255,6 +1261,7 @@
-   side_panel_content_transition_scrim_view_ = nullptr;
-   vertical_tab_strip_region_view_ = nullptr;
-   vertical_tab_strip_background_blur_backdrop_ = nullptr;
-+  bookmark_sidebar_view_ = nullptr;
-   organizer_panel_container_ = nullptr;
-   side_panel_ = nullptr;
+             BrowserActions::From(browser_)->root_action_item(), this);
  
-@@ -5820,6 +5827,7 @@
+     if (features::IsGlassFrameEnabled()) {
+@@ -1257,6 +1263,7 @@
+   top_container_separator_ = nullptr;
+   find_bar_host_view_ = nullptr;
+   infobar_container_ = nullptr;
++  bookmark_sidebar_view_ = nullptr;
+   multi_contents_view_ = nullptr;
+   main_shadow_overlay_ = nullptr;
+   window_scrim_view_ = nullptr;
+@@ -5822,6 +5829,7 @@
+   layout_views.horizontal_tab_strip_region_view =
+       horizontal_tab_strip_region_view_;
    layout_views.vertical_tab_strip_region_view = vertical_tab_strip_region_view_;
++  layout_views.bookmark_sidebar = bookmark_sidebar_view_;
    layout_views.vertical_tab_strip_background_blur_backdrop =
        vertical_tab_strip_background_blur_backdrop_;
-+  layout_views.bookmark_sidebar = bookmark_sidebar_view_;
-   layout_views.organizer_panel_container = organizer_panel_container_;
-   layout_views.toolbar = toolbar_;
-   layout_views.infobar_container = infobar_container_;
+   layout_views.organizer_tray = organizer_tray_;
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.h
 @@ -0,0 +1,283 @@

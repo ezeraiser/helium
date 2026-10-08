@@ -1,10 +1,9 @@
 --- a/chrome/common/pref_names.h
 +++ b/chrome/common/pref_names.h
-@@ -633,6 +633,16 @@
- // A boolean pref set to true if vertical tabs should be on the right side.
+@@ -634,6 +634,16 @@
  inline constexpr char kHeliumVerticalRightAligned[] =
      "helium.browser.vertical_right_aligned";
-+
+ 
 +// A boolean pref set to true if the icon-only (collapsed) vertical tab strip
 +// should expand on hover, restoring its last uncollapsed width.
 +inline constexpr char kHeliumVerticalExpandOnHover[] =
@@ -14,9 +13,10 @@
 +// collapsed vertical tab strip before it expands.
 +inline constexpr char kHeliumVerticalExpandOnHoverDelayMs[] =
 +    "helium.browser.vertical_expand_on_hover_delay_ms";
- 
++
  // A boolean pref set to true if zen mode is enabled.
  inline constexpr char kHeliumZenMode[] = "helium.browser.zen_mode";
+ 
 --- a/chrome/browser/ui/tabs/tab_strip_prefs.cc
 +++ b/chrome/browser/ui/tabs/tab_strip_prefs.cc
 @@ -32,6 +32,9 @@
@@ -70,10 +70,12 @@
    void SetCollapsed(bool collapsed);
 --- a/chrome/browser/ui/tabs/vertical_tab_strip_state_controller.cc
 +++ b/chrome/browser/ui/tabs/vertical_tab_strip_state_controller.cc
-@@ -69,11 +69,55 @@
+@@ -70,12 +70,56 @@
        base::BindRepeating(&VerticalTabStripStateController::OnModeChanged,
                            base::Unretained(this)));
  
+-  if (restored_state_collapsed.has_value()) {
+-    SetCollapsed(restored_state_collapsed.value());
 +  is_expand_on_hover_enabled_ =
 +      pref_service_->GetBoolean(prefs::kHeliumVerticalExpandOnHover);
 +  pref_change_registrar_.Add(
@@ -117,26 +119,21 @@
 +      restored_state_collapsed =
 +          pref_service_->GetBoolean(prefs::kVerticalTabsCollapsedState);
 +    }
-+  }
-+  if (restored_state_uncollapsed_width.has_value()) {
-+    SetUncollapsedWidth(restored_state_uncollapsed_width.value());
-+  }
-   if (restored_state_collapsed.has_value()) {
-     SetCollapsed(restored_state_collapsed.value());
--  }
--  if (restored_state_uncollapsed_width.has_value()) {
--    SetUncollapsedWidth(restored_state_uncollapsed_width.value());
    }
+   if (restored_state_uncollapsed_width.has_value()) {
+     SetUncollapsedWidth(restored_state_uncollapsed_width.value());
+   }
++  if (restored_state_collapsed.has_value()) {
++    SetCollapsed(restored_state_collapsed.value());
++  }
  
    UpdateCollapseActionItem();
-@@ -245,10 +289,24 @@
+ 
+@@ -246,11 +290,25 @@
  }
  
  bool VerticalTabStripStateController::IsExpandOnHoverEnabled() const {
 -  return is_expand_on_hover_enabled_;
--}
--
--void VerticalTabStripStateController::SetExpandOnHoverEnabled(bool enabled) {}
 +  // Ezer: mirrors appearance_page.ts's ezerVerticalExpandOnHoverDisabled_,
 +  // which greys the Settings toggle out while Zen/Frameless mode is active
 +  // -- fold the same condition into the getter so every caller (the hover
@@ -154,11 +151,14 @@
 +    const {
 +  return base::Milliseconds(
 +      pref_service_->GetInteger(prefs::kHeliumVerticalExpandOnHoverDelayMs));
-+}
+ }
  
+-void VerticalTabStripStateController::SetExpandOnHoverEnabled(bool enabled) {}
+-
  void VerticalTabStripStateController::SetIsResizing(bool is_resizing) {
    if (is_resizing_ == is_resizing) {
-@@ -329,7 +387,8 @@
+     return;
+@@ -330,7 +388,8 @@
  }
  
  void VerticalTabStripStateController::OnExpandOnHoverEnabledChanged() {
@@ -168,12 +168,10 @@
    if (is_expand_on_hover_enabled_) {
      base::RecordAction(
          base::UserMetricsAction("VerticalTabs_ExpandOnHover_Enabled"));
-@@ -338,6 +397,26 @@
-         base::UserMetricsAction("VerticalTabs_ExpandOnHover_Disabled"));
-   }
+@@ -341,6 +400,26 @@
    NotifyExpandOnHoverEnabledChanged();
-+}
-+
+ }
+ 
 +void VerticalTabStripStateController::OnCollapsedStatePrefChanged() {
 +  // Ezer: the Settings toggle this pref backs ("Show sidebar as icons
 +  // only") is shown disabled in Settings while Zen/Frameless mode is
@@ -192,12 +190,14 @@
 +    return;
 +  }
 +  RequestCollapse(pref_collapsed);
- }
- 
++}
++
  void VerticalTabStripStateController::SetCollapsed(bool collapsed) {
+   if (state_.collapsed != collapsed) {
+     state_.collapsed = collapsed;
 --- a/chrome/browser/ui/tabs/features.cc
 +++ b/chrome/browser/ui/tabs/features.cc
-@@ -40,22 +40,33 @@
+@@ -42,22 +42,33 @@
                     "expand_on_hover_default_enabled",
                     true);
  
@@ -235,7 +235,7 @@
                     &kVerticalTabsExpandOnHover,
 --- a/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
 +++ b/chrome/browser/ui/views/frame/vertical_tab_strip_region_view.cc
-@@ -923,8 +923,10 @@
+@@ -925,8 +925,10 @@
      // expand, so do nothing.
      return;
    } else {
@@ -249,7 +249,7 @@
                         /*expand=*/true));
 --- a/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
 +++ b/chrome/browser/ui/views/frame/layout/browser_view_tabbed_layout_impl.cc
-@@ -957,6 +957,27 @@
+@@ -954,6 +954,27 @@
                                 /*leading=*/!vertical_right_aligned);
        }
  
@@ -279,11 +279,10 @@
          const bool vertical_tab_strip_resize_animation =
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -312,6 +312,15 @@
-     </message>
+@@ -313,6 +313,15 @@
      <message name="IDS_SETTINGS_SHOW_PROGRESS_BAR" desc="Label for the toggle that shows loading progress in the address bar.">
        Show loading progress in the address bar
-+    </message>
+     </message>
 +    <message name="IDS_SETTINGS_VERTICAL_TABS_SHOW_COLLAPSED" desc="Label for the toggle that makes new browser windows start with the vertical tab strip collapsed to icons only.">
 +      Show sidebar as icons only
 +    </message>
@@ -292,12 +291,13 @@
 +    </message>
 +    <message name="IDS_SETTINGS_VERTICAL_TABS_EXPAND_ON_HOVER_DELAY" desc="Label for the dropdown that controls how long the mouse must hover over a collapsed vertical tab strip before it expands.">
 +      Delay
-     </message>
++    </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
+     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -606,6 +606,11 @@
+@@ -607,6 +607,11 @@
        {"browserLayoutCompact", IDS_SETTINGS_BROWSER_LAYOUT_COMPACT},
        {"browserLayoutVertical", IDS_SETTINGS_BROWSER_LAYOUT_VERTICAL},
        {"tabStripRightAlign", IDS_SETTINGS_TAB_STRIP_RIGHT_ALIGN},
@@ -320,15 +320,15 @@
  
        // <if expr="is_linux">
        themeSystemThemePref_: {type: Object},
-@@ -187,6 +189,7 @@
-       tabStripUnificationEnabled_: {type: Boolean},
+@@ -188,6 +190,7 @@
+       splitViewHorizontalEnabled_: {type: Boolean},
        sidePanelAlignmentOptions_: {type: Array},
        configurableSidePanels_: {type: Array},
 +      expandOnHoverDelayOptions_: {type: Array},
      };
    }
  
-@@ -223,6 +226,10 @@
+@@ -224,6 +227,10 @@
    protected accessor themePolicyColorPref_: PrefObject<number>|undefined =
        undefined;
    protected accessor zenModePref_: PrefObject<boolean>|undefined = undefined;
@@ -339,12 +339,10 @@
  
    // <if expr="is_linux">
    protected accessor themeSystemThemePref_: PrefObject<number>|undefined =
-@@ -294,6 +301,18 @@
-   protected accessor sidePanelAlignmentOptions_: DropdownMenuOptionList = [
-     {value: 'false', name: loadTimeData.getString('uiFeatureAlignLeft')},
+@@ -297,6 +304,18 @@
      {value: 'true', name: loadTimeData.getString('uiFeatureAlignRight')},
-+  ];
-+
+   ];
+ 
 +  // Ezer: values are milliseconds, stored directly in
 +  // helium.browser.vertical_expand_on_hover_delay_ms.
 +  protected accessor expandOnHoverDelayOptions_: DropdownMenuOptionList = [
@@ -355,10 +353,12 @@
 +    {value: 500, name: '500 ms'},
 +    {value: 750, name: '750 ms'},
 +    {value: 1000, name: '1000 ms'},
-   ];
- 
++  ];
++
    /**
-@@ -368,6 +387,9 @@
+    * Predefined zoom factors to be used when zooming in/out. These are in
+    * ascending order. Values are displayed in the page zoom drop-down menu
+@@ -371,6 +390,9 @@
        'side_panel.is_right_aligned': 'sidePanelIsRightAlignedPref_',
        'toolbar.pinned_actions': 'pinnedActionsPref_',
        'helium.browser.zen_mode': 'zenModePref_',
@@ -368,11 +368,10 @@
        'webkit.webprefs.default_font_size': 'defaultFontSizePref_',
      });
  
-@@ -428,6 +450,31 @@
-         changedPrivateProperties.has('pinSplitTabButtonPref_') ||
+@@ -432,6 +454,31 @@
          changedPrivateProperties.has('pinContextualTaskButtonPref_')) {
        this.toolbarPinningStateChanged_();
-+    }
+     }
 +
 +    if (changedPrivateProperties.has('zenModePref_')) {
 +      this.ezerVerticalCollapseSettingsZenModeChanged_();
@@ -397,10 +396,11 @@
 +    if (this.heliumVerticalExpandOnHoverPref_?.value) {
 +      PrefService.getInstance().setPrefValue(
 +          'helium.browser.vertical_expand_on_hover', false);
-     }
++    }
    }
  
-@@ -725,6 +772,17 @@
+   protected get isForcedTheme_(): boolean {
+@@ -728,6 +775,17 @@
      return this.browserLayoutPref_?.value !== BrowserLayout.COMPACT;
    }
  

@@ -1,10 +1,9 @@
 --- a/components/performance_manager/public/user_tuning/prefs.h
 +++ b/components/performance_manager/public/user_tuning/prefs.h
-@@ -39,6 +39,16 @@
-     "performance_tuning.high_efficiency_mode.time_before_discard_in_minutes";
+@@ -40,6 +40,16 @@
  
  constexpr int kDefaultMemorySaverModeTimeBeforeDiscardInMinutes = 120;
-+
+ 
 +// Ezer: shrink the working set of tabs that have been out of sight for a
 +// while (see BackgroundTabTrimPolicy). Local state prefs.
 +inline constexpr char kBackgroundTabTrimEnabled[] =
@@ -14,9 +13,10 @@
 +inline constexpr char kBackgroundTabTrimBrowserEnabled[] =
 +    "helium.performance.background_tab_trim.browser_when_hidden";
 +constexpr int kDefaultBackgroundTabTrimDelaySeconds = 10;
- 
++
  enum class MemorySaverModeAggressiveness {
    kConservative = 0,
+   kMedium = 1,
 --- a/components/performance_manager/user_tuning/prefs.cc
 +++ b/components/performance_manager/user_tuning/prefs.cc
 @@ -48,6 +48,10 @@
@@ -32,7 +32,7 @@
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1399,6 +1399,15 @@
+@@ -1407,6 +1407,15 @@
    (*s_allowlist)[performance_manager::user_tuning::prefs::
                       kMemorySaverModeTimeBeforeDiscardInMinutes] =
        settings_api::PrefType::kNumber;
@@ -76,7 +76,7 @@
  #include "chrome/browser/performance_manager/policies/best_effort_task_inhibiting_policy.h"
  #include "chrome/browser/performance_manager/policies/frame_throttling_policy.h"
  #include "chrome/browser/performance_manager/policies/freezing_opt_out_checker.h"
-@@ -195,6 +196,13 @@
+@@ -196,6 +197,13 @@
    }
  #endif  // BUILDFLAG(IS_WIN)
  
@@ -658,11 +658,10 @@
 +}  // namespace performance_manager
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -348,6 +348,39 @@
-     </message>
+@@ -349,6 +349,39 @@
      <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR" desc="Context menu item that removes the separator line that was right-clicked in the bookmark sidebar.">
        Remove separator
-+    </message>
+     </message>
 +    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_LABEL" desc="Label for the toggle that shrinks the memory used by tabs that have been inactive for a while, without reloading them.">
 +      Free memory of inactive tabs
 +    </message>
@@ -695,12 +694,13 @@
 +    </message>
 +    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES" desc="Drop-down option: wait 5 minutes.">
 +      5 minutes
-     </message>
++    </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
+     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -1311,6 +1311,27 @@
+@@ -1317,6 +1317,27 @@
        {"speedPageTitle", IDS_SETTINGS_PERFORMANCE_SPEED_PAGE_TITLE},
        {"memorySaverModeLabel",
         IDS_SETTINGS_PERFORMANCE_MEMORY_SAVER_MODE_SETTING},
@@ -746,16 +746,16 @@
  import type {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
  import {loadTimeData} from '../i18n_setup.js';
  
-@@ -27,6 +29,9 @@
- 
+@@ -28,6 +30,9 @@
  export const MEMORY_SAVER_MODE_AGGRESSIVENESS_PREF =
      'performance_tuning.high_efficiency_mode.aggressiveness';
-+
+ 
 +export const BACKGROUND_TAB_TRIM_ENABLED_PREF =
 +    'helium.performance.background_tab_trim.enabled';
- 
++
  const SettingsMemoryPageElementBase = PrefServiceObserverMixinLit(CrLitElement);
  
+ export interface SettingsMemoryPageElement {
 @@ -54,6 +59,8 @@
        numericUncheckedValues_: {type: Array},
        numericCheckedValue_: {type: Number},
@@ -793,17 +793,17 @@
    }
  
    protected onMemorySaverModeChange_() {
-@@ -91,6 +112,10 @@
-       return false;
-     }
+@@ -93,6 +114,10 @@
      return this.memorySaverStatePref_.value !== MemorySaverModeState.DISABLED;
-+  }
-+
-+  protected isBackgroundTrimEnabled_(): boolean {
-+    return !!this.backgroundTrimEnabledPref_?.value;
    }
  
++  protected isBackgroundTrimEnabled_(): boolean {
++    return !!this.backgroundTrimEnabledPref_?.value;
++  }
++
    protected onMemorySaverSubLabelLinkClicked_() {
+     OpenWindowProxyImpl.getInstance().openUrl(
+         loadTimeData.getString('memorySaverLearnMoreUrl'));
 --- a/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 +++ b/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 @@ -54,5 +54,28 @@

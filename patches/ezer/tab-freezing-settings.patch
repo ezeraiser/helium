@@ -1,10 +1,9 @@
 --- a/components/performance_manager/public/user_tuning/prefs.h
 +++ b/components/performance_manager/public/user_tuning/prefs.h
-@@ -49,6 +49,17 @@
- inline constexpr char kBackgroundTabTrimBrowserEnabled[] =
+@@ -50,6 +50,17 @@
      "helium.performance.background_tab_trim.browser_when_hidden";
  constexpr int kDefaultBackgroundTabTrimDelaySeconds = 10;
-+
+ 
 +// Ezer: how the "infinite tabs" freezing (see FreezingPolicy) behaves. How many
 +// of the most recently used tabs are never frozen, and how often (in seconds) a
 +// frozen tab is woken up for a moment. Local state prefs; the master switch is
@@ -15,9 +14,10 @@
 +    "helium.performance.tab_freezing.unfreeze_interval_seconds";
 +constexpr int kDefaultTabFreezingProtectedTabs = 2;
 +constexpr int kDefaultTabFreezingUnfreezeIntervalSeconds = 60;
- 
++
  enum class MemorySaverModeAggressiveness {
    kConservative = 0,
+   kMedium = 1,
 --- a/components/performance_manager/user_tuning/prefs.cc
 +++ b/components/performance_manager/user_tuning/prefs.cc
 @@ -52,6 +52,10 @@
@@ -33,7 +33,7 @@
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1408,6 +1408,14 @@
+@@ -1416,6 +1416,14 @@
    (*s_allowlist)[performance_manager::user_tuning::prefs::
                       kBackgroundTabTrimDelaySeconds] =
        settings_api::PrefType::kNumber;
@@ -71,16 +71,16 @@
  // kInfiniteTabsFreezing policy.
 --- a/components/performance_manager/features.cc
 +++ b/components/performance_manager/features.cc
-@@ -6,6 +6,9 @@
- // mechanisms and features in the performance_manager component.
+@@ -7,6 +7,9 @@
  
  #include "components/performance_manager/public/features.h"
-+
+ 
 +#include <atomic>
 +#include <cstdint>
- 
++
  #include "base/feature_list.h"
  #include "base/metrics/field_trial_params.h"
+ #include "base/time/time.h"
 @@ -232,6 +235,50 @@
                     "unfreeze_duration",
                     base::Seconds(5));
@@ -162,7 +162,7 @@
    }
  
    // Returns true if `now` is within a periodic unfreeze period for this page.
-@@ -1229,19 +1229,18 @@
+@@ -1229,20 +1229,19 @@
  }
  
  void FreezingPolicy::MaybePopFromMostRecentlyUsedList() {
@@ -173,12 +173,6 @@
 -          features::kInfiniteTabsFreezing_NumProtectedTabs.Get() ||
 -      most_recently_used_.empty()) {
 -    return;
--  }
--
--  const PageNode* back = most_recently_used_.back();
--  most_recently_used_.pop_back();
--  OnCannotFreezeReasonChange(back, /*add=*/false,
--                             CannotFreezeReason::kMostRecentlyUsed);
 +  // Ezer: a loop rather than a single pop. The limit can be lowered at runtime
 +  // (Performance settings), which leaves more than one entry too many, and
 +  // CheckMostRecentlyUsedListSize() below would crash on that.
@@ -190,10 +184,16 @@
 +    most_recently_used_.pop_back();
 +    OnCannotFreezeReasonChange(back, /*add=*/false,
 +                               CannotFreezeReason::kMostRecentlyUsed);
-+  }
+   }
  
+-  const PageNode* back = most_recently_used_.back();
+-  most_recently_used_.pop_back();
+-  OnCannotFreezeReasonChange(back, /*add=*/false,
+-                             CannotFreezeReason::kMostRecentlyUsed);
+-
    // Check that removing one tab from `most_recently_used_` was sufficient to
    // respect the limit. This should be the case if this method is called
+   // whenever `num_visible_tabs_` is incremented or an element is added to
 @@ -1261,7 +1260,7 @@
    // visible tabs must be below or at the limit.
    CHECK_LE(
@@ -240,7 +240,7 @@
  #include "chrome/browser/performance_manager/policies/keep_alive_dse_policy.h"
  #include "chrome/browser/performance_manager/policies/page_discarding_helper.h"
  #include "chrome/browser/performance_manager/policies/policy_features.h"
-@@ -240,6 +241,9 @@
+@@ -241,6 +242,9 @@
    graph->PassToGraph(std::make_unique<performance_manager::FreezingPolicy>(
        std::make_unique<FreezingDiscarder>(),
        std::move(freezing_opt_out_checker)));
@@ -252,11 +252,10 @@
        std::make_unique<performance_manager::policies::MemorySaverModePolicy>());
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -359,6 +359,30 @@
-     </message>
+@@ -361,6 +361,30 @@
      <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION" desc="Description for the toggle that also shrinks the memory used by the browser itself while it is in the background.">
        When all windows are minimized or hidden and nothing is playing, also shrinks the memory used by the browser and the graphics process itself. Bringing a window back can take a moment longer.
-+    </message>
+     </message>
 +    <message name="IDS_SETTINGS_TAB_FREEZING_LABEL" desc="Label for the toggle that freezes tabs that have not been used for a while.">
 +      Freeze tabs you are not using
 +    </message>
@@ -280,12 +279,13 @@
 +    </message>
 +    <message name="IDS_SETTINGS_TAB_FREEZING_UNFREEZE_30_SECONDS" desc="Drop-down option: wake frozen tabs every 30 seconds.">
 +      Every 30 seconds
-     </message>
++    </message>
      <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_LABEL" desc="Label for the drop-down that sets how long a tab must be inactive before its memory is shrunk.">
        Wait before freeing memory
+     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -1318,6 +1318,22 @@
+@@ -1324,6 +1324,22 @@
         IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_LABEL},
        {"backgroundTabTrimBrowserDescription",
         IDS_SETTINGS_BACKGROUND_TAB_TRIM_BROWSER_DESCRIPTION},
@@ -360,17 +360,17 @@
    }
  
    protected onMemorySaverModeChange_() {
-@@ -116,6 +138,10 @@
- 
-   protected isBackgroundTrimEnabled_(): boolean {
+@@ -118,6 +140,10 @@
      return !!this.backgroundTrimEnabledPref_?.value;
-+  }
-+
-+  protected isTabFreezingEnabled_(): boolean {
-+    return !!this.tabFreezingEnabledPref_?.value;
    }
  
++  protected isTabFreezingEnabled_(): boolean {
++    return !!this.tabFreezingEnabledPref_?.value;
++  }
++
    protected onMemorySaverSubLabelLinkClicked_() {
+     OpenWindowProxyImpl.getInstance().openUrl(
+         loadTimeData.getString('memorySaverLearnMoreUrl'));
 --- a/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 +++ b/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 @@ -77,5 +77,32 @@
