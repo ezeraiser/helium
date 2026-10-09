@@ -1633,5 +1633,25 @@
     "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES",
     "source": "30 minutes",
     "message": "30 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_LABEL",
+    "source": "Open selected sites in Microsoft Edge as an app",
+    "message": "Seçili siteleri Microsoft Edge'de uygulama olarak aç"
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_DESCRIPTION",
+    "source": "For sites that need copy protection (DRM) licensing this browser does not have, such as Netflix. Needs Microsoft Edge to be installed. Windows only.",
+    "message": "Netflix gibi, bu tarayıcıda bulunmayan kopya koruma (DRM) lisansı isteyen siteler içindir. Microsoft Edge'in kurulu olması gerekir. Yalnızca Windows."
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_SITES_LABEL",
+    "source": "Sites (separated by commas or spaces)",
+    "message": "Siteler (virgül veya boşlukla ayırın)"
+  },
+  {
+    "name": "IDS_EDGE_APP_NOT_FOUND",
+    "source": "Microsoft Edge is not installed, so this site cannot be opened as an app. Install Microsoft Edge, or turn off \"Open selected sites in Microsoft Edge as an app\" in Settings.",
+    "message": "Microsoft Edge kurulu olmadığı için bu site uygulama olarak açılamıyor. Microsoft Edge'i kurun ya da Ayarlar'daki \"Seçili siteleri Microsoft Edge'de uygulama olarak aç\" seçeneğini kapatın."
   }
 ]

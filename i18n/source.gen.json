@@ -1567,6 +1567,30 @@
     "message": "Every 30 seconds"
   },
   {
+    "name": "IDS_SETTINGS_EDGE_APP_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that opens chosen sites in Microsoft Edge as an app window.",
+    "message": "Open selected sites in Microsoft Edge as an app"
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that opens chosen sites in Microsoft Edge as an app window.",
+    "message": "For sites that need copy protection (DRM) licensing this browser does not have, such as Netflix. Needs Microsoft Edge to be installed. Windows only."
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_SITES_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label of the text box listing the sites to open in Microsoft Edge.",
+    "message": "Sites (separated by commas or spaces)"
+  },
+  {
+    "name": "IDS_EDGE_APP_NOT_FOUND",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Shown on a page when a site should open in Microsoft Edge but Edge is not installed.",
+    "message": "Microsoft Edge is not installed, so this site cannot be opened as an app. Install Microsoft Edge, or turn off \"Open selected sites in Microsoft Edge as an app\" in Settings."
+  },
+  {
     "name": "IDS_CONTENT_CONTEXT_SYSTEM_TRANSLATE",
     "source": "chrome/app/generated_resources.grd",
     "context": "The name of the macOS system Translate command in the content area context menu",

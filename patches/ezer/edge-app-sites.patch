@@ -1,0 +1,463 @@
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -4983,4 +4983,16 @@
+   <message name="IDS_SETTINGS_DICTATION_SHORTCUT_CLEAR_LABEL" translateable="false" desc="Accessibility label for the clear keyboard shortcut button icon.">
+     Clear keyboard shortcut
+   </message>
++  <message name="IDS_SETTINGS_EDGE_APP_LABEL" desc="Label for the toggle that opens chosen sites in Microsoft Edge as an app window.">
++    Open selected sites in Microsoft Edge as an app
++  </message>
++  <message name="IDS_SETTINGS_EDGE_APP_DESCRIPTION" desc="Description for the toggle that opens chosen sites in Microsoft Edge as an app window.">
++    For sites that need copy protection (DRM) licensing this browser does not have, such as Netflix. Needs Microsoft Edge to be installed. Windows only.
++  </message>
++  <message name="IDS_SETTINGS_EDGE_APP_SITES_LABEL" desc="Label of the text box listing the sites to open in Microsoft Edge.">
++    Sites (separated by commas or spaces)
++  </message>
++  <message name="IDS_EDGE_APP_NOT_FOUND" desc="Shown on a page when a site should open in Microsoft Edge but Edge is not installed.">
++    Microsoft Edge is not installed, so this site cannot be opened as an app. Install Microsoft Edge, or turn off "Open selected sites in Microsoft Edge as an app" in Settings.
++  </message>
+ </grit-part>
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -864,6 +864,8 @@
+     "chrome_content_browser_client_navigation_throttles.h",
+     "chrome_content_browser_client_receiver_bindings.cc",
+     "chrome_resource_bundle_helper.cc",
++    "edge_app/edge_app_navigation_throttle.cc",
++    "edge_app/edge_app_navigation_throttle.h",
+     "chrome_resource_bundle_helper.h",
+     "expired_flags_list.h",
+     "file_select_helper.cc",
+--- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
++++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
+@@ -15,6 +15,7 @@
+ #include "chrome/browser/custom_handlers/chrome_protocol_handler_navigation_throttle.h"
+ #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
+ #include "chrome/browser/data_sharing/data_sharing_navigation_throttle.h"
++#include "chrome/browser/edge_app/edge_app_navigation_throttle.h"
+ #include "chrome/browser/enterprise/data_protection/view_source_navigation_throttle.h"
+ #include "chrome/browser/glic/glic_navigation_throttle.h"
+ #include "chrome/browser/glic/host/glic_guest_navigation_throttle.h"
+@@ -336,6 +337,9 @@
+   PlatformAppNavigationRedirector::MaybeCreateAndAdd(registry);
+ #endif  // BUILDFLAG(IS_ANDROID)
+ 
++  // Open the user's chosen sites in Microsoft Edge as an app window.
++  edge_app::EdgeAppNavigationThrottle::MaybeCreateAndAdd(registry);
++
+ #if BUILDFLAG(IS_CHROMEOS)
+   // Check if we need to add merge session throttle. This throttle will postpone
+   // loading of main frames.
+--- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
++++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
+@@ -244,6 +244,8 @@
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kHeliumBookmarkSidebarVisible] =
+       settings_api::PrefType::kBoolean;
++  (*s_allowlist)["helium.edge_app.enabled"] = settings_api::PrefType::kBoolean;
++  (*s_allowlist)["helium.edge_app.sites"] = settings_api::PrefType::kString;
+   (*s_allowlist)[::prefs::kHeliumBookmarkSidebarPosition] =
+       settings_api::PrefType::kNumber;
+   (*s_allowlist)[::prefs::kHeliumBookmarkSidebarExpandOnHover] =
+--- a/chrome/browser/prefs/browser_prefs.cc
++++ b/chrome/browser/prefs/browser_prefs.cc
+@@ -30,6 +30,7 @@
+ #include "chrome/browser/contextual_cueing/prefs.h"
+ #include "chrome/browser/crash_upload_list/helium_crash_reporting.h"
+ #include "chrome/browser/download/download_prefs.h"
++#include "chrome/browser/edge_app/edge_app_navigation_throttle.h"
+ #include "chrome/browser/engagement/important_sites_util.h"
+ #include "chrome/browser/enterprise/reporting/prefs.h"
+ #include "chrome/browser/enterprise/util/managed_browser_utils.h"
+@@ -2208,6 +2209,7 @@
+   side_panel_prefs::RegisterProfilePrefs(registry);
+ 
+   tabs::RegisterProfilePrefs(registry);
++  edge_app::RegisterProfilePrefs(registry);
+ 
+   CertificateManagerPageHandler::RegisterProfilePrefs(registry);
+ 
+--- a/chrome/browser/resources/settings/performance_page/performance_page.html.ts
++++ b/chrome/browser/resources/settings/performance_page/performance_page.html.ts
+@@ -32,6 +32,19 @@
+   </cr-link-row>
+   <tab-discard-exception-list id="exceptionList">
+   </tab-discard-exception-list>
++  <settings-toggle-button id="edgeAppToggle"
++      pref-key="helium.edge_app.enabled"
++      label="$i18n{edgeAppLabel}"
++      sub-label="$i18n{edgeAppDescription}">
++  </settings-toggle-button>
++  <div class="cr-row continuation">
++    <cr-input id="edgeAppSites" class="flex"
++        label="$i18n{edgeAppSitesLabel}"
++        .value="${this.edgeAppSitesPref_?.value ?? ''}"
++        ?disabled="${!this.edgeAppEnabledPref_?.value}"
++        @change="${this.onEdgeAppSitesChange_}">
++    </cr-input>
++  </div>
+ </settings-section>
+ <!--_html_template_end_-->`;
+ }
+--- a/chrome/browser/resources/settings/performance_page/performance_page.ts
++++ b/chrome/browser/resources/settings/performance_page/performance_page.ts
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ import '../controls/settings_toggle_button.js';
++import 'chrome://resources/cr_elements/cr_input/cr_input.js';
+ import 'chrome://resources/cr_elements/cr_link_row/cr_link_row.js';
+ import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+ import '../settings_page/settings_section.js';
+@@ -15,6 +16,7 @@
+ import {OpenWindowProxyImpl} from 'chrome://resources/js/open_window_proxy.js';
+ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
+ import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
++import type {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
+ 
+ import type {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
+ import {loadTimeData} from '../i18n_setup.js';
+@@ -33,6 +35,9 @@
+ 
+ export const PERFORMANCE_INTERVENTION_NOTIFICATION_PREF =
+     'performance_tuning.intervention_notification.enabled';
++
++export const EDGE_APP_ENABLED_PREF = 'helium.edge_app.enabled';
++export const EDGE_APP_SITES_PREF = 'helium.edge_app.sites';
+ 
+ // browser_element_identifiers constants
+ const INACTIVE_TAB_SETTING_ELEMENT_ID = 'kInactiveTabSettingElementId';
+@@ -62,8 +67,31 @@
+     return getHtml.bind(this)();
+   }
+ 
++  static override get properties() {
++    return {
++      edgeAppEnabledPref_: {type: Object},
++      edgeAppSitesPref_: {type: Object},
++    };
++  }
++
++  protected accessor edgeAppEnabledPref_: chrome.settingsPrivate.PrefObject|
++      undefined;
++  protected accessor edgeAppSitesPref_: chrome.settingsPrivate.PrefObject|
++      undefined;
++
+   private metricsProxy_: PerformanceMetricsProxy =
+       PerformanceMetricsProxyImpl.getInstance();
++
++  override connectedCallback() {
++    super.connectedCallback();
++    this.mirrorPref(EDGE_APP_ENABLED_PREF, 'edgeAppEnabledPref_');
++    this.mirrorPref(EDGE_APP_SITES_PREF, 'edgeAppSitesPref_');
++  }
++
++  protected onEdgeAppSitesChange_(e: Event) {
++    PrefService.getInstance().setPrefValue(
++        EDGE_APP_SITES_PREF, (e.target as CrInputElement).value);
++  }
+ 
+   override firstUpdated(changedProperties: PropertyValues<this>) {
+     super.firstUpdated(changedProperties);
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -1373,6 +1373,9 @@
+        IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_10_MINUTES},
+       {"backgroundTabTrimRepeat30Minutes",
+        IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES},
++      {"edgeAppLabel", IDS_SETTINGS_EDGE_APP_LABEL},
++      {"edgeAppDescription", IDS_SETTINGS_EDGE_APP_DESCRIPTION},
++      {"edgeAppSitesLabel", IDS_SETTINGS_EDGE_APP_SITES_LABEL},
+       {"memorySaverModeHeuristicsLabel",
+        IDS_SETTINGS_PERFORMANCE_MEMORY_SAVER_MODE_HEURISTICS_LABEL},
+       {"memorySaverModeRecommendedBadge",
+--- /dev/null
++++ b/chrome/browser/edge_app/edge_app_navigation_throttle.h
+@@ -0,0 +1,59 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef CHROME_BROWSER_EDGE_APP_EDGE_APP_NAVIGATION_THROTTLE_H_
++#define CHROME_BROWSER_EDGE_APP_EDGE_APP_NAVIGATION_THROTTLE_H_
++
++#include <optional>
++
++#include "base/memory/weak_ptr.h"
++#include "content/public/browser/navigation_throttle.h"
++
++namespace user_prefs {
++class PrefRegistrySyncable;
++}
++
++namespace edge_app {
++
++// A boolean profile pref: open the sites in `kEdgeAppSites` in Microsoft Edge
++// as an app window (`msedge.exe --app=<url>`) instead of a Helium tab. Needed
++// for sites that require DRM licensing Helium does not have (e.g. Netflix).
++inline constexpr char kEdgeAppEnabled[] = "helium.edge_app.enabled";
++
++// A string profile pref: host names (or URLs), separated by spaces, commas or
++// new lines. A host matches itself and all of its subdomains.
++inline constexpr char kEdgeAppSites[] = "helium.edge_app.sites";
++
++void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
++
++// Sends top-level http(s) GET navigations to a configured site to Microsoft
++// Edge. Windows only; if Edge is not installed the navigation is blocked and
++// an error page that says so is shown.
++class EdgeAppNavigationThrottle : public content::NavigationThrottle {
++ public:
++  static void MaybeCreateAndAdd(content::NavigationThrottleRegistry& registry);
++
++  explicit EdgeAppNavigationThrottle(
++      content::NavigationThrottleRegistry& registry);
++  ~EdgeAppNavigationThrottle() override;
++
++  EdgeAppNavigationThrottle(const EdgeAppNavigationThrottle&) = delete;
++  EdgeAppNavigationThrottle& operator=(const EdgeAppNavigationThrottle&) =
++      delete;
++
++  // content::NavigationThrottle:
++  ThrottleCheckResult WillStartRequest() override;
++  ThrottleCheckResult WillRedirectRequest() override;
++  const char* GetNameForLogging() override;
++
++ private:
++  ThrottleCheckResult Check();
++  void OnLaunchResult(std::optional<bool> launched);
++
++  base::WeakPtrFactory<EdgeAppNavigationThrottle> weak_factory_{this};
++};
++
++}  // namespace edge_app
++
++#endif  // CHROME_BROWSER_EDGE_APP_EDGE_APP_NAVIGATION_THROTTLE_H_
+--- /dev/null
++++ b/chrome/browser/edge_app/edge_app_navigation_throttle.cc
+@@ -0,0 +1,225 @@
++// Copyright 2026 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "chrome/browser/edge_app/edge_app_navigation_throttle.h"
++
++#include <memory>
++#include <string>
++#include <string_view>
++#include <utility>
++
++#include "base/command_line.h"
++#include "base/files/file_path.h"
++#include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/location.h"
++#include "base/logging.h"
++#include "base/path_service.h"
++#include "base/process/launch.h"
++#include "base/strings/escape.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/task/task_traits.h"
++#include "base/task/thread_pool.h"
++#include "build/build_config.h"
++#include "chrome/browser/profiles/profile.h"
++#include "chrome/grit/generated_resources.h"
++#include "components/prefs/pref_service.h"
++#include "components/pref_registry/pref_registry_syncable.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/web_contents.h"
++#include "net/base/net_errors.h"
++#include "ui/base/l10n/l10n_util.h"
++#include "url/gurl.h"
++
++#if BUILDFLAG(IS_WIN)
++#include "base/base_paths_win.h"
++#endif
++
++namespace edge_app {
++
++namespace {
++
++// "netflix.com", "https://www.netflix.com/browse" -> "netflix.com".
++std::string NormalizeSite(std::string_view entry) {
++  std::string site = base::ToLowerASCII(entry);
++  if (site.find("://") != std::string::npos) {
++    GURL url(site);
++    site = url.is_valid() ? url.host() : std::string();
++  } else {
++    // Drop a path and a port.
++    site = site.substr(0, site.find_first_of("/:?#"));
++  }
++  if (base::StartsWith(site, "www.")) {
++    site.erase(0, 4);
++  }
++  return site;
++}
++
++bool HostMatchesAnySite(const std::string& host, const std::string& sites) {
++  if (host.empty()) {
++    return false;
++  }
++  for (const std::string& entry :
++       base::SplitString(sites, " ,;\r\n\t", base::TRIM_WHITESPACE,
++                         base::SPLIT_WANT_NONEMPTY)) {
++    const std::string site = NormalizeSite(entry);
++    if (site.empty()) {
++      continue;
++    }
++    if (host == site ||
++        (host.size() > site.size() && base::EndsWith(host, "." + site))) {
++      return true;
++    }
++  }
++  return false;
++}
++
++// Blocking. Returns nullopt if Edge is not installed, else whether the
++// process could be started.
++std::optional<bool> FindEdgeAndLaunch(const GURL& url) {
++#if BUILDFLAG(IS_WIN)
++  base::FilePath edge;
++  for (int key : {base::DIR_PROGRAM_FILESX86, base::DIR_PROGRAM_FILES}) {
++    base::FilePath dir;
++    if (!base::PathService::Get(key, &dir)) {
++      continue;
++    }
++    base::FilePath candidate = dir.AppendASCII("Microsoft")
++                                   .AppendASCII("Edge")
++                                   .AppendASCII("Application")
++                                   .AppendASCII("msedge.exe");
++    if (base::PathExists(candidate)) {
++      edge = candidate;
++      break;
++    }
++  }
++  if (edge.empty()) {
++    return std::nullopt;
++  }
++  base::CommandLine command_line(edge);
++  command_line.AppendSwitchASCII("app", url.spec());
++  return base::LaunchProcess(command_line, base::LaunchOptions()).IsValid();
++#else
++  return std::nullopt;
++#endif
++}
++
++std::string BuildErrorPage() {
++  const std::string message =
++      base::EscapeForHTML(l10n_util::GetStringUTF8(IDS_EDGE_APP_NOT_FOUND));
++  return "<!doctype html><html><head><meta charset=\"utf-8\">"
++         "<meta name=\"viewport\" content=\"width=device-width\">"
++         "<style>body{font:16px system-ui,sans-serif;max-width:36em;"
++         "margin:20vh auto;padding:0 1em;color:#444}</style></head><body><p>" +
++         message + "</p></body></html>";
++}
++
++void ClosePageIfAlive(base::WeakPtr<content::WebContents> web_contents) {
++  if (web_contents) {
++    web_contents->ClosePage();
++  }
++}
++
++}  // namespace
++
++void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
++  registry->RegisterBooleanPref(kEdgeAppEnabled, false);
++  registry->RegisterStringPref(kEdgeAppSites, "netflix.com");
++}
++
++// static
++void EdgeAppNavigationThrottle::MaybeCreateAndAdd(
++    content::NavigationThrottleRegistry& registry) {
++#if BUILDFLAG(IS_WIN)
++  content::NavigationHandle& handle = registry.GetNavigationHandle();
++  if (!handle.IsInOutermostMainFrame() || handle.IsInPrerenderedMainFrame() ||
++      handle.IsPost() || !handle.GetURL().SchemeIsHTTPOrHTTPS()) {
++    return;
++  }
++  content::WebContents* web_contents = handle.GetWebContents();
++  if (!web_contents || web_contents->IsInnerWebContentsForGuest()) {
++    return;
++  }
++  Profile* profile =
++      Profile::FromBrowserContext(web_contents->GetBrowserContext());
++  if (!profile || profile->IsOffTheRecord() ||
++      !profile->GetPrefs()->GetBoolean(kEdgeAppEnabled)) {
++    return;
++  }
++  registry.AddThrottle(std::make_unique<EdgeAppNavigationThrottle>(registry));
++#endif
++}
++
++EdgeAppNavigationThrottle::EdgeAppNavigationThrottle(
++    content::NavigationThrottleRegistry& registry)
++    : content::NavigationThrottle(registry) {}
++
++EdgeAppNavigationThrottle::~EdgeAppNavigationThrottle() = default;
++
++content::NavigationThrottle::ThrottleCheckResult
++EdgeAppNavigationThrottle::WillStartRequest() {
++  return Check();
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++EdgeAppNavigationThrottle::WillRedirectRequest() {
++  return Check();
++}
++
++const char* EdgeAppNavigationThrottle::GetNameForLogging() {
++  return "EdgeAppNavigationThrottle";
++}
++
++content::NavigationThrottle::ThrottleCheckResult
++EdgeAppNavigationThrottle::Check() {
++  content::NavigationHandle* handle = navigation_handle();
++  const GURL& url = handle->GetURL();
++  if (!url.SchemeIsHTTPOrHTTPS()) {
++    return PROCEED;
++  }
++  Profile* profile = Profile::FromBrowserContext(
++      handle->GetWebContents()->GetBrowserContext());
++  if (!profile->GetPrefs()->GetBoolean(kEdgeAppEnabled) ||
++      !HostMatchesAnySite(url.host(),
++                          profile->GetPrefs()->GetString(kEdgeAppSites))) {
++    return PROCEED;
++  }
++  // Finding and starting Edge touches the disk, so do it off the UI thread and
++  // hold the navigation until it is done.
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
++      base::BindOnce(&FindEdgeAndLaunch, url),
++      base::BindOnce(&EdgeAppNavigationThrottle::OnLaunchResult,
++                     weak_factory_.GetWeakPtr()));
++  return DEFER;
++}
++
++void EdgeAppNavigationThrottle::OnLaunchResult(std::optional<bool> launched) {
++  if (!launched.has_value()) {
++    CancelDeferredNavigation(ThrottleCheckResult(
++        BLOCK_REQUEST, net::ERR_BLOCKED_BY_CLIENT, BuildErrorPage()));
++    return;
++  }
++  if (!*launched) {
++    LOG(WARNING) << "EdgeApp: could not start Microsoft Edge";
++    Resume();
++    return;
++  }
++  // A link that opened a new, still empty tab would otherwise leave that tab
++  // behind.
++  content::WebContents* web_contents = navigation_handle()->GetWebContents();
++  const bool close_tab = web_contents->GetController().IsInitialNavigation();
++  base::WeakPtr<content::WebContents> weak_contents =
++      web_contents->GetWeakPtr();
++  CancelDeferredNavigation(CANCEL_AND_IGNORE);
++  if (close_tab) {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&ClosePageIfAlive, weak_contents));
++  }
++}
++
++}  // namespace edge_app
