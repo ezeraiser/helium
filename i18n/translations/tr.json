@@ -1653,5 +1653,10 @@
     "name": "IDS_EDGE_APP_NOT_FOUND",
     "source": "Microsoft Edge is not installed, so this site cannot be opened as an app. Install Microsoft Edge, or turn off \"Open selected sites in Microsoft Edge as an app\" in Settings.",
     "message": "Microsoft Edge kurulu olmadığı için bu site uygulama olarak açılamıyor. Microsoft Edge'i kurun ya da Ayarlar'daki \"Seçili siteleri Microsoft Edge'de uygulama olarak aç\" seçeneğini kapatın."
+  },
+  {
+    "name": "IDS_SETTINGS_EDGE_APP_MISSING",
+    "source": "Microsoft Edge was not found, so this option was turned off. Install Microsoft Edge, reopen Settings and try again.",
+    "message": "Microsoft Edge bulunamadı, bu yüzden seçenek kapatıldı. Microsoft Edge'i kurun, Ayarlar'ı yeniden açın ve tekrar deneyin."
   }
 ]

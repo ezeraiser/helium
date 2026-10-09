@@ -1585,6 +1585,12 @@
     "message": "Sites (separated by commas or spaces)"
   },
   {
+    "name": "IDS_SETTINGS_EDGE_APP_MISSING",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Warning shown under the Microsoft Edge toggle when it was turned off again because Edge is not installed.",
+    "message": "Microsoft Edge was not found, so this option was turned off. Install Microsoft Edge, reopen Settings and try again."
+  },
+  {
     "name": "IDS_EDGE_APP_NOT_FOUND",
     "source": "chrome/app/settings_strings.grdp",
     "context": "Shown on a page when a site should open in Microsoft Edge but Edge is not installed.",
