@@ -1583,5 +1583,55 @@
     "name": "IDS_TAB_CXMENU_SOUND_UNMUTE_TAB",
     "source": "{NUM_TABS, plural, =1 {Unmute Tab} other {Unmute Tabs}}",
     "message": "{NUM_TABS, plural, =1 {Sekmenin sesini aç} other {Sekmelerin sesini aç}}"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_LABEL",
+    "source": "Keep freeing memory while media is playing",
+    "message": "Medya çalarken de belleği boşaltmaya devam et"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_DESCRIPTION",
+    "source": "While a tab plays sound in the background, everything except that tab keeps being shrunk: other tabs, the browser and the graphics process. Nothing is shrunk while a video is in Picture-in-Picture or the camera or screen is shared.",
+    "message": "Arka planda bir sekme ses çalarken, o sekme dışındaki her şeyin belleği küçültülmeye devam eder: diğer sekmeler, tarayıcı ve grafik süreci. Bir video Resim İçinde Resim modundayken ya da kamera veya ekran paylaşılırken hiçbir şey küçültülmez."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_LABEL",
+    "source": "Also free memory of helper processes",
+    "message": "Yardımcı süreçlerin belleğini de boşalt"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_DESCRIPTION",
+    "source": "Also shrinks the network, storage and other helper processes and spare tab processes together with the browser. Helper processes are left alone while any tab is playing sound, as the audio process is one of them.",
+    "message": "Tarayıcıyla birlikte ağ, depolama ve diğer yardımcı süreçlerin ve boştaki sekme süreçlerinin belleğini de küçültür. Ses süreci de yardımcı süreçlerden biri olduğu için, herhangi bir sekme ses çalarken yardımcı süreçlere dokunulmaz."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_LABEL",
+    "source": "Free memory again every",
+    "message": "Belleği şu aralıkla yeniden boşalt"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_NEVER",
+    "source": "Never",
+    "message": "Hiçbir zaman"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_2_MINUTES",
+    "source": "2 minutes",
+    "message": "2 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_5_MINUTES",
+    "source": "5 minutes",
+    "message": "5 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_10_MINUTES",
+    "source": "10 minutes",
+    "message": "10 dakika"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES",
+    "source": "30 minutes",
+    "message": "30 dakika"
   }
 ]

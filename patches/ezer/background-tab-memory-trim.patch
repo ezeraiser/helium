@@ -1,9 +1,10 @@
 --- a/components/performance_manager/public/user_tuning/prefs.h
 +++ b/components/performance_manager/public/user_tuning/prefs.h
-@@ -40,6 +40,16 @@
+@@ -39,6 +39,27 @@
+     "performance_tuning.high_efficiency_mode.time_before_discard_in_minutes";
  
  constexpr int kDefaultMemorySaverModeTimeBeforeDiscardInMinutes = 120;
- 
++
 +// Ezer: shrink the working set of tabs that have been out of sight for a
 +// while (see BackgroundTabTrimPolicy). Local state prefs.
 +inline constexpr char kBackgroundTabTrimEnabled[] =
@@ -12,14 +13,24 @@
 +    "helium.performance.background_tab_trim.delay_seconds";
 +inline constexpr char kBackgroundTabTrimBrowserEnabled[] =
 +    "helium.performance.background_tab_trim.browser_when_hidden";
++// Keep shrinking everything but the tab that plays while media (sound) plays.
++inline constexpr char kBackgroundTabTrimWhileMediaEnabled[] =
++    "helium.performance.background_tab_trim.while_media_plays";
++// Also shrink the helper processes (network, storage, ...) together with the
++// browser and GPU processes.
++inline constexpr char kBackgroundTabTrimHelpersEnabled[] =
++    "helium.performance.background_tab_trim.helper_processes";
++// While nothing is in sight, shrink everything again this often (0: never).
++inline constexpr char kBackgroundTabTrimRepeatSeconds[] =
++    "helium.performance.background_tab_trim.repeat_seconds";
 +constexpr int kDefaultBackgroundTabTrimDelaySeconds = 10;
-+
++constexpr int kDefaultBackgroundTabTrimRepeatSeconds = 600;
+ 
  enum class MemorySaverModeAggressiveness {
    kConservative = 0,
-   kMedium = 1,
 --- a/components/performance_manager/user_tuning/prefs.cc
 +++ b/components/performance_manager/user_tuning/prefs.cc
-@@ -48,6 +48,10 @@
+@@ -48,6 +48,14 @@
                               base::Time());
    registry->RegisterListPref(kPerformanceInterventionNotificationAcceptHistory);
    registry->RegisterBooleanPref(kForceForegroundPriorityForAllTabs, false);
@@ -27,12 +38,16 @@
 +  registry->RegisterBooleanPref(kBackgroundTabTrimBrowserEnabled, false);
 +  registry->RegisterIntegerPref(kBackgroundTabTrimDelaySeconds,
 +                                kDefaultBackgroundTabTrimDelaySeconds);
++  registry->RegisterBooleanPref(kBackgroundTabTrimWhileMediaEnabled, true);
++  registry->RegisterBooleanPref(kBackgroundTabTrimHelpersEnabled, true);
++  registry->RegisterIntegerPref(kBackgroundTabTrimRepeatSeconds,
++                                kDefaultBackgroundTabTrimRepeatSeconds);
  }
  
  void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1407,6 +1407,15 @@
+@@ -1407,6 +1407,24 @@
    (*s_allowlist)[performance_manager::user_tuning::prefs::
                       kMemorySaverModeTimeBeforeDiscardInMinutes] =
        settings_api::PrefType::kNumber;
@@ -44,6 +59,15 @@
 +      settings_api::PrefType::kBoolean;
 +  (*s_allowlist)[performance_manager::user_tuning::prefs::
 +                     kBackgroundTabTrimDelaySeconds] =
++      settings_api::PrefType::kNumber;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kBackgroundTabTrimWhileMediaEnabled] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kBackgroundTabTrimHelpersEnabled] =
++      settings_api::PrefType::kBoolean;
++  (*s_allowlist)[performance_manager::user_tuning::prefs::
++                     kBackgroundTabTrimRepeatSeconds] =
 +      settings_api::PrefType::kNumber;
    (*s_allowlist)
        [performance_manager::user_tuning::prefs::kBatterySaverModeState] =
@@ -92,7 +116,7 @@
        base::FeatureList::IsEnabled(features::kWebContentsDiscard);
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.h
-@@ -0,0 +1,167 @@
+@@ -0,0 +1,200 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -126,13 +150,25 @@
 +// policy talks to the OS directly.
 +//
 +// A process is left alone while any of its pages is visible, audible, in
-+// Picture-in-Picture or capturing (camera, microphone, screen, tab mirroring),
-+// and it is trimmed at most once per time it becomes fully hidden.
++// Picture-in-Picture or capturing (camera, microphone, screen, tab mirroring).
++// That only exempts *that* process: other tabs are still trimmed while, say,
++// music plays in a hidden tab. A process is trimmed once per time it becomes
++// fully hidden, and again every prefs::kBackgroundTabTrimRepeatSeconds while
++// nothing is in sight (the processes slowly fill up again), if that is set.
 +//
 +// Optionally (prefs::kBackgroundTabTrimBrowserEnabled) the browser process and
-+// the GPU process are trimmed too, once *every* page has been out of sight and
-+// idle for the same delay, e.g. the window is minimized. They are never
-+// trimmed while any page is visible, as they are what draws it.
++// the GPU process are trimmed too, once *no page is visible* for the same delay,
++// e.g. the window is minimized. They are never trimmed while any page is
++// visible, as they are what draws it, nor while something is being drawn or
++// encoded without a visible page (Picture-in-Picture, camera/screen capture,
++// tab mirroring). Sound alone does not hold them back
++// (prefs::kBackgroundTabTrimWhileMediaEnabled, on by default; when off the old
++// behaviour applies and any audible page keeps them untouched).
++//
++// With prefs::kBackgroundTabTrimHelpersEnabled the helper (utility) processes
++// and spare renderers without pages are trimmed together with them. The audio
++// service is one of the utility processes and cannot be told apart from the
++// others, so the utility processes are left alone while any page is audible.
 +//
 +// The graph lives on the main thread, so the prefs are read directly.
 +//
@@ -180,9 +216,12 @@
 +    base::TimeTicks hidden_since;
 +    // Whether it was already trimmed during this hidden period.
 +    bool trimmed = false;
++    // When it was last trimmed (for the periodic re-trim).
++    base::TimeTicks last_trim;
 +  };
 +
-+  // Reads the prefs into `enabled_`, `trim_browser_` and `delay_`.
++  // Reads the prefs into `enabled_`, `trim_browser_`, `trim_while_media_`,
++  // `trim_helpers_`, `delay_` and `repeat_`.
 +  void ReadPrefs();
 +
 +  // Reads the prefs and re-evaluates.
@@ -217,8 +256,20 @@
 +  // visible all the time.
 +  static bool IsContentPage(const PageNode* page_node);
 +
-+  // Whether there is at least one content page and all of them are idle.
++  // Whether `page_node` keeps the *browser and GPU processes* from being
++  // trimmed: it is visible, in Picture-in-Picture, or something is drawn or
++  // encoded for it (video/window/display capture, mirroring). Sound (and, when
++  // not trimming while media plays, audio too) is decided by
++  // `trim_while_media_`. Unlike IsPageIdle() this does not look at the
++  // process of the page, only at what the user sees.
++  bool PageKeepsBrowserBusy(const PageNode* page_node) const;
++
++  // Whether there is at least one content page and none of them keeps the
++  // browser and GPU processes busy (see PageKeepsBrowserBusy()).
 +  bool AllPagesIdle() const;
++
++  // Whether any content page is audible.
++  bool AnyContentPageAudible() const;
 +
 +  // The first content page that keeps the browser from being idle, or null.
 +  const PageNode* FindBusyPage() const;
@@ -236,12 +287,18 @@
 +  PrefChangeRegistrar pref_change_registrar_;
 +  bool enabled_ = false;
 +  bool trim_browser_ = false;
++  bool trim_while_media_ = true;
++  bool trim_helpers_ = true;
 +  base::TimeDelta delay_;
++  // How often to trim again while nothing is in sight; zero: never.
++  base::TimeDelta repeat_;
 +
 +  // When every page was first seen idle (null while one is not), and whether
 +  // the browser and GPU processes were already trimmed during this period.
 +  base::TimeTicks all_idle_since_;
 +  bool browser_processes_trimmed_ = false;
++  // When the browser and GPU processes were last trimmed.
++  base::TimeTicks last_browser_trim_;
 +  // Only compared, never dereferenced: the page last reported by LogBusyPage().
 +  const PageNode* last_logged_busy_page_ = nullptr;
 +
@@ -262,7 +319,7 @@
 +#endif  // CHROME_BROWSER_PERFORMANCE_MANAGER_POLICIES_BACKGROUND_TAB_TRIM_POLICY_H_
 --- /dev/null
 +++ b/chrome/browser/performance_manager/policies/background_tab_trim_policy.cc
-@@ -0,0 +1,393 @@
+@@ -0,0 +1,490 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -327,7 +384,10 @@
 +    for (const char* pref :
 +         {user_tuning::prefs::kBackgroundTabTrimEnabled,
 +          user_tuning::prefs::kBackgroundTabTrimBrowserEnabled,
-+          user_tuning::prefs::kBackgroundTabTrimDelaySeconds}) {
++          user_tuning::prefs::kBackgroundTabTrimDelaySeconds,
++          user_tuning::prefs::kBackgroundTabTrimWhileMediaEnabled,
++          user_tuning::prefs::kBackgroundTabTrimHelpersEnabled,
++          user_tuning::prefs::kBackgroundTabTrimRepeatSeconds}) {
 +      pref_change_registrar_.Add(
 +          pref, base::BindRepeating(&BackgroundTabTrimPolicy::OnPrefChanged,
 +                                    base::Unretained(this)));
@@ -400,7 +460,10 @@
 +  PrefService* local_state = g_browser_process->local_state();
 +  enabled_ = false;
 +  trim_browser_ = false;
++  trim_while_media_ = true;
++  trim_helpers_ = true;
 +  int delay_seconds = user_tuning::prefs::kDefaultBackgroundTabTrimDelaySeconds;
++  int repeat_seconds = user_tuning::prefs::kDefaultBackgroundTabTrimRepeatSeconds;
 +  if (local_state) {
 +    enabled_ = local_state->GetBoolean(
 +        user_tuning::prefs::kBackgroundTabTrimEnabled);
@@ -409,8 +472,15 @@
 +                        user_tuning::prefs::kBackgroundTabTrimBrowserEnabled);
 +    delay_seconds = local_state->GetInteger(
 +        user_tuning::prefs::kBackgroundTabTrimDelaySeconds);
++    trim_while_media_ = local_state->GetBoolean(
++        user_tuning::prefs::kBackgroundTabTrimWhileMediaEnabled);
++    trim_helpers_ = local_state->GetBoolean(
++        user_tuning::prefs::kBackgroundTabTrimHelpersEnabled);
++    repeat_seconds = local_state->GetInteger(
++        user_tuning::prefs::kBackgroundTabTrimRepeatSeconds);
 +  }
 +  delay_ = std::max(kMinDelay, base::Seconds(delay_seconds));
++  repeat_ = repeat_seconds > 0 ? base::Seconds(repeat_seconds) : base::TimeDelta();
 +}
 +
 +void BackgroundTabTrimPolicy::OnPrefChanged() {
@@ -465,6 +535,10 @@
 +  const base::TimeTicks now = base::TimeTicks::Now();
 +  base::TimeTicks next_deadline = base::TimeTicks::Max();
 +
++  // Whether to trim again (periodically) the processes that were already
++  // trimmed: only while nothing is in sight, as they slowly fill up again.
++  const bool repeat_now = repeat_.is_positive() && AllPagesIdle();
++
 +  for (const ProcessNode* process_node : GetOwningGraph()->GetAllProcessNodes()) {
 +    if (process_node->GetProcessType() != content::PROCESS_TYPE_RENDERER) {
 +      continue;
@@ -482,6 +556,16 @@
 +      state.hidden_since = now;
 +    }
 +    if (state.trimmed) {
++      if (repeat_now) {
++        const base::TimeTicks repeat_deadline = state.last_trim + repeat_;
++        if (repeat_deadline <= now) {
++          Trim(process_node);
++          state.last_trim = now;
++          next_deadline = std::min(next_deadline, now + repeat_);
++        } else {
++          next_deadline = std::min(next_deadline, repeat_deadline);
++        }
++      }
 +      continue;
 +    }
 +
@@ -489,6 +573,10 @@
 +    if (deadline <= now) {
 +      Trim(process_node);
 +      state.trimmed = true;
++      state.last_trim = now;
++      if (repeat_now) {
++        next_deadline = std::min(next_deadline, now + repeat_);
++      }
 +    } else {
 +      next_deadline = std::min(next_deadline, deadline);
 +    }
@@ -552,13 +640,37 @@
 +         page_node->GetType() == PageType::kExtension;
 +}
 +
++bool BackgroundTabTrimPolicy::PageKeepsBrowserBusy(
++    const PageNode* page_node) const {
++  if (page_node->IsVisible() || page_node->HasPictureInPicture()) {
++    return true;
++  }
++
++  const PageLiveStateDecorator::Data* live_state =
++      PageLiveStateDecorator::Data::FromPageNode(page_node);
++  // Something is being drawn or encoded for this page.
++  if (live_state &&
++      (live_state->IsCapturingVideo() || live_state->IsCapturingWindow() ||
++       live_state->IsCapturingDisplay() || live_state->IsBeingMirrored())) {
++    return true;
++  }
++
++  // Sound alone only holds the browser back when not trimming while media
++  // plays (the previous behavior).
++  if (trim_while_media_) {
++    return false;
++  }
++  return page_node->IsAudible() ||
++         (live_state && live_state->IsCapturingAudio());
++}
++
 +bool BackgroundTabTrimPolicy::AllPagesIdle() const {
 +  bool has_page = false;
 +  for (const PageNode* page_node : GetOwningGraph()->GetAllPageNodes()) {
 +    if (!IsContentPage(page_node)) {
 +      continue;
 +    }
-+    if (!IsPageIdle(page_node)) {
++    if (PageKeepsBrowserBusy(page_node)) {
 +      return false;
 +    }
 +    has_page = true;
@@ -566,9 +678,18 @@
 +  return has_page;
 +}
 +
++bool BackgroundTabTrimPolicy::AnyContentPageAudible() const {
++  for (const PageNode* page_node : GetOwningGraph()->GetAllPageNodes()) {
++    if (IsContentPage(page_node) && page_node->IsAudible()) {
++      return true;
++    }
++  }
++  return false;
++}
++
 +const PageNode* BackgroundTabTrimPolicy::FindBusyPage() const {
 +  for (const PageNode* page_node : GetOwningGraph()->GetAllPageNodes()) {
-+    if (IsContentPage(page_node) && !IsPageIdle(page_node)) {
++    if (IsContentPage(page_node) && PageKeepsBrowserBusy(page_node)) {
 +      return page_node;
 +    }
 +  }
@@ -603,6 +724,7 @@
 +void BackgroundTabTrimPolicy::ResetBrowserProcessTrim() {
 +  all_idle_since_ = base::TimeTicks();
 +  browser_processes_trimmed_ = false;
++  last_browser_trim_ = base::TimeTicks();
 +}
 +
 +void BackgroundTabTrimPolicy::UpdateBrowserProcessTrim(
@@ -620,6 +742,17 @@
 +    all_idle_since_ = now;
 +  }
 +  if (browser_processes_trimmed_) {
++    // Trimmed already; trim again periodically while nothing is in sight.
++    if (repeat_.is_positive()) {
++      const base::TimeTicks repeat_deadline = last_browser_trim_ + repeat_;
++      if (repeat_deadline <= now) {
++        TrimBrowserProcesses();
++        last_browser_trim_ = now;
++        *next_deadline = std::min(*next_deadline, now + repeat_);
++      } else {
++        *next_deadline = std::min(*next_deadline, repeat_deadline);
++      }
++    }
 +    return;
 +  }
 +
@@ -627,19 +760,40 @@
 +  if (deadline <= now) {
 +    TrimBrowserProcesses();
 +    browser_processes_trimmed_ = true;
++    last_browser_trim_ = now;
++    if (repeat_.is_positive()) {
++      *next_deadline = std::min(*next_deadline, now + repeat_);
++    }
 +  } else {
 +    *next_deadline = std::min(*next_deadline, deadline);
 +  }
 +}
 +
 +void BackgroundTabTrimPolicy::TrimBrowserProcesses() {
-+  LOG(INFO) << "BackgroundTabTrim: trimming the browser and GPU processes";
++  // The audio service is a utility process and cannot be told apart from the
++  // others, so utility processes are left alone while any page is audible.
++  const bool trim_utility = trim_helpers_ && !AnyContentPageAudible();
++  LOG(INFO) << "BackgroundTabTrim: trimming the browser and GPU processes"
++            << (trim_helpers_ ? (trim_utility ? " and the helper processes"
++                                              : " (helpers wait: audible page)")
++                              : "");
 +#if BUILDFLAG(IS_WIN)
 +  TrimProcessHandle(::GetCurrentProcess());
 +  for (const ProcessNode* process_node :
 +       GetOwningGraph()->GetAllProcessNodes()) {
-+    if (process_node->GetProcessType() == content::PROCESS_TYPE_GPU &&
-+        process_node->GetProcess().IsValid()) {
++    if (!process_node->GetProcess().IsValid()) {
++      continue;
++    }
++    const content::ProcessType type = process_node->GetProcessType();
++    bool trim = type == content::PROCESS_TYPE_GPU;
++    if (trim_helpers_ && !trim) {
++      // Helper (utility) processes, and spare renderers that host no page yet
++      // (renderers with pages are handled one by one in Evaluate()).
++      trim = (type == content::PROCESS_TYPE_UTILITY && trim_utility) ||
++             (type == content::PROCESS_TYPE_RENDERER &&
++              process_node->GetFrameNodes().empty());
++    }
++    if (trim) {
 +      TrimProcessHandle(process_node->GetProcess().Handle());
 +    }
 +  }
@@ -658,10 +812,11 @@
 +}  // namespace performance_manager
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -349,6 +349,39 @@
+@@ -348,6 +348,69 @@
+     </message>
      <message name="IDS_SETTINGS_BOOKMARK_SIDEBAR_REMOVE_SEPARATOR" desc="Context menu item that removes the separator line that was right-clicked in the bookmark sidebar.">
        Remove separator
-     </message>
++    </message>
 +    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_LABEL" desc="Label for the toggle that shrinks the memory used by tabs that have been inactive for a while, without reloading them.">
 +      Free memory of inactive tabs
 +    </message>
@@ -695,12 +850,41 @@
 +    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES" desc="Drop-down option: wait 5 minutes.">
 +      5 minutes
 +    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_LABEL" desc="Label for the toggle that keeps freeing memory while a tab plays sound.">
++      Keep freeing memory while media is playing
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_DESCRIPTION" desc="Description for the toggle that keeps freeing memory while a tab plays sound.">
++      While a tab plays sound in the background, everything except that tab keeps being shrunk: other tabs, the browser and the graphics process. Nothing is shrunk while a video is in Picture-in-Picture or the camera or screen is shared.
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_LABEL" desc="Label for the toggle that also shrinks the memory used by helper processes of the browser.">
++      Also free memory of helper processes
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_DESCRIPTION" desc="Description for the toggle that also shrinks the memory used by helper processes of the browser.">
++      Also shrinks the network, storage and other helper processes and spare tab processes together with the browser. Helper processes are left alone while any tab is playing sound, as the audio process is one of them.
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_LABEL" desc="Label for the drop-down that sets how often memory is freed again while the browser stays in the background.">
++      Free memory again every
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_NEVER" desc="Drop-down option: never repeat.">
++      Never
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_2_MINUTES" desc="Drop-down option: every 2 minutes.">
++      2 minutes
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_5_MINUTES" desc="Drop-down option: every 5 minutes.">
++      5 minutes
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_10_MINUTES" desc="Drop-down option: every 10 minutes.">
++      10 minutes
++    </message>
++    <message name="IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES" desc="Drop-down option: every 30 minutes.">
++      30 minutes
+     </message>
      <message name="IDS_SETTINGS_BROWSER_ZEN_MODE" desc="Label for the toggle that enables zen mode, hiding browser chrome until hover.">
        Frameless mode
-     </message>
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -1317,6 +1317,27 @@
+@@ -1317,6 +1317,46 @@
        {"speedPageTitle", IDS_SETTINGS_PERFORMANCE_SPEED_PAGE_TITLE},
        {"memorySaverModeLabel",
         IDS_SETTINGS_PERFORMANCE_MEMORY_SAVER_MODE_SETTING},
@@ -725,6 +909,25 @@
 +       IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_2_MINUTES},
 +      {"backgroundTabTrimDelay5Minutes",
 +       IDS_SETTINGS_BACKGROUND_TAB_TRIM_DELAY_5_MINUTES},
++      {"backgroundTabTrimMediaLabel", IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_LABEL},
++      {"backgroundTabTrimMediaDescription",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_DESCRIPTION},
++      {"backgroundTabTrimHelpersLabel",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_LABEL},
++      {"backgroundTabTrimHelpersDescription",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_DESCRIPTION},
++      {"backgroundTabTrimRepeatLabel",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_LABEL},
++      {"backgroundTabTrimRepeatNever",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_NEVER},
++      {"backgroundTabTrimRepeat2Minutes",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_2_MINUTES},
++      {"backgroundTabTrimRepeat5Minutes",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_5_MINUTES},
++      {"backgroundTabTrimRepeat10Minutes",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_10_MINUTES},
++      {"backgroundTabTrimRepeat30Minutes",
++       IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES},
        {"memorySaverModeHeuristicsLabel",
         IDS_SETTINGS_PERFORMANCE_MEMORY_SAVER_MODE_HEURISTICS_LABEL},
        {"memorySaverModeRecommendedBadge",
@@ -746,26 +949,27 @@
  import type {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
  import {loadTimeData} from '../i18n_setup.js';
  
-@@ -28,6 +30,9 @@
+@@ -27,6 +29,9 @@
+ 
  export const MEMORY_SAVER_MODE_AGGRESSIVENESS_PREF =
      'performance_tuning.high_efficiency_mode.aggressiveness';
- 
++
 +export const BACKGROUND_TAB_TRIM_ENABLED_PREF =
 +    'helium.performance.background_tab_trim.enabled';
-+
+ 
  const SettingsMemoryPageElementBase = PrefServiceObserverMixinLit(CrLitElement);
  
- export interface SettingsMemoryPageElement {
-@@ -54,6 +59,8 @@
+@@ -54,6 +59,9 @@
        numericUncheckedValues_: {type: Array},
        numericCheckedValue_: {type: Number},
        memorySaverStatePref_: {type: Object},
 +      backgroundTrimEnabledPref_: {type: Object},
 +      backgroundTrimDelayOptions_: {type: Array},
++      backgroundTrimRepeatOptions_: {type: Array},
      };
    }
  
-@@ -63,6 +70,18 @@
+@@ -63,6 +71,27 @@
        MemorySaverModeState.ENABLED;
    protected accessor memorySaverStatePref_: chrome.settingsPrivate.PrefObject|
        undefined;
@@ -781,10 +985,19 @@
 +    {value: 120, name: loadTimeData.getString('backgroundTabTrimDelay2Minutes')},
 +    {value: 300, name: loadTimeData.getString('backgroundTabTrimDelay5Minutes')},
 +  ];
++
++  // Values are seconds, matching the repeat_seconds pref (0: never).
++  protected accessor backgroundTrimRepeatOptions_: DropdownMenuOptionList = [
++    {value: 0, name: loadTimeData.getString('backgroundTabTrimRepeatNever')},
++    {value: 120, name: loadTimeData.getString('backgroundTabTrimRepeat2Minutes')},
++    {value: 300, name: loadTimeData.getString('backgroundTabTrimRepeat5Minutes')},
++    {value: 600, name: loadTimeData.getString('backgroundTabTrimRepeat10Minutes')},
++    {value: 1800, name: loadTimeData.getString('backgroundTabTrimRepeat30Minutes')},
++  ];
  
    private metricsProxy_: PerformanceMetricsProxy =
        PerformanceMetricsProxyImpl.getInstance();
-@@ -70,6 +89,8 @@
+@@ -70,6 +99,8 @@
    override connectedCallback() {
      super.connectedCallback();
      this.mirrorPref(MEMORY_SAVER_MODE_PREF, 'memorySaverStatePref_');
@@ -793,20 +1006,20 @@
    }
  
    protected onMemorySaverModeChange_() {
-@@ -93,6 +114,10 @@
+@@ -91,6 +122,10 @@
+       return false;
+     }
      return this.memorySaverStatePref_.value !== MemorySaverModeState.DISABLED;
-   }
- 
-+  protected isBackgroundTrimEnabled_(): boolean {
-+    return !!this.backgroundTrimEnabledPref_?.value;
 +  }
 +
++  protected isBackgroundTrimEnabled_(): boolean {
++    return !!this.backgroundTrimEnabledPref_?.value;
+   }
+ 
    protected onMemorySaverSubLabelLinkClicked_() {
-     OpenWindowProxyImpl.getInstance().openUrl(
-         loadTimeData.getString('memorySaverLearnMoreUrl'));
 --- a/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 +++ b/chrome/browser/resources/settings/performance_page/memory_page.html.ts
-@@ -54,5 +54,28 @@
+@@ -54,5 +54,50 @@
        </settings-radio-group>
      </div>
    </cr-collapse>
@@ -832,6 +1045,28 @@
 +        label="$i18n{backgroundTabTrimBrowserLabel}"
 +        sub-label="$i18n{backgroundTabTrimBrowserDescription}">
 +    </settings-toggle-button>
++    <settings-toggle-button id="backgroundTrimMediaToggle"
++        class="continuation"
++        pref-key="helium.performance.background_tab_trim.while_media_plays"
++        label="$i18n{backgroundTabTrimMediaLabel}"
++        sub-label="$i18n{backgroundTabTrimMediaDescription}">
++    </settings-toggle-button>
++    <settings-toggle-button id="backgroundTrimHelpersToggle"
++        class="continuation"
++        pref-key="helium.performance.background_tab_trim.helper_processes"
++        label="$i18n{backgroundTabTrimHelpersLabel}"
++        sub-label="$i18n{backgroundTabTrimHelpersDescription}">
++    </settings-toggle-button>
++    <div class="cr-row continuation">
++      <div class="flex cr-padded-text" aria-hidden="true">
++        $i18n{backgroundTabTrimRepeatLabel}
++      </div>
++      <settings-dropdown-menu id="backgroundTrimRepeat"
++          label="$i18n{backgroundTabTrimRepeatLabel}"
++          pref-key="helium.performance.background_tab_trim.repeat_seconds"
++          .menuOptions="${this.backgroundTrimRepeatOptions_}">
++      </settings-dropdown-menu>
++    </div>
 +  </cr-collapse>
  </settings-section><!--_html_template_end_-->`;
  }

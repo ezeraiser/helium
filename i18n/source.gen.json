@@ -1459,6 +1459,66 @@
     "message": "5 minutes"
   },
   {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that keeps freeing memory while a tab plays sound.",
+    "message": "Keep freeing memory while media is playing"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_MEDIA_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that keeps freeing memory while a tab plays sound.",
+    "message": "While a tab plays sound in the background, everything except that tab keeps being shrunk: other tabs, the browser and the graphics process. Nothing is shrunk while a video is in Picture-in-Picture or the camera or screen is shared."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the toggle that also shrinks the memory used by helper processes of the browser.",
+    "message": "Also free memory of helper processes"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_HELPERS_DESCRIPTION",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Description for the toggle that also shrinks the memory used by helper processes of the browser.",
+    "message": "Also shrinks the network, storage and other helper processes and spare tab processes together with the browser. Helper processes are left alone while any tab is playing sound, as the audio process is one of them."
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_LABEL",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Label for the drop-down that sets how often memory is freed again while the browser stays in the background.",
+    "message": "Free memory again every"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_NEVER",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: never repeat.",
+    "message": "Never"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_2_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: every 2 minutes.",
+    "message": "2 minutes"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_5_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: every 5 minutes.",
+    "message": "5 minutes"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_10_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: every 10 minutes.",
+    "message": "10 minutes"
+  },
+  {
+    "name": "IDS_SETTINGS_BACKGROUND_TAB_TRIM_REPEAT_30_MINUTES",
+    "source": "chrome/app/settings_strings.grdp",
+    "context": "Drop-down option: every 30 minutes.",
+    "message": "30 minutes"
+  },
+  {
     "name": "IDS_SETTINGS_TAB_FREEZING_LABEL",
     "source": "chrome/app/settings_strings.grdp",
     "context": "Label for the toggle that freezes tabs that have not been used for a while.",

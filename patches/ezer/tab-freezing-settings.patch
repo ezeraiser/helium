@@ -1,8 +1,8 @@
 --- a/components/performance_manager/public/user_tuning/prefs.h
 +++ b/components/performance_manager/public/user_tuning/prefs.h
-@@ -50,6 +50,17 @@
-     "helium.performance.background_tab_trim.browser_when_hidden";
+@@ -61,6 +61,17 @@
  constexpr int kDefaultBackgroundTabTrimDelaySeconds = 10;
+ constexpr int kDefaultBackgroundTabTrimRepeatSeconds = 600;
  
 +// Ezer: how the "infinite tabs" freezing (see FreezingPolicy) behaves. How many
 +// of the most recently used tabs are never frozen, and how often (in seconds) a
@@ -28,14 +28,14 @@
 +                                kDefaultTabFreezingProtectedTabs);
 +  registry->RegisterIntegerPref(kTabFreezingUnfreezeIntervalSeconds,
 +                                kDefaultTabFreezingUnfreezeIntervalSeconds);
- }
- 
- void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
+   registry->RegisterBooleanPref(kBackgroundTabTrimWhileMediaEnabled, true);
+   registry->RegisterBooleanPref(kBackgroundTabTrimHelpersEnabled, true);
+   registry->RegisterIntegerPref(kBackgroundTabTrimRepeatSeconds,
 --- a/chrome/browser/extensions/api/settings_private/prefs_util.cc
 +++ b/chrome/browser/extensions/api/settings_private/prefs_util.cc
-@@ -1416,6 +1416,14 @@
+@@ -1425,6 +1425,14 @@
    (*s_allowlist)[performance_manager::user_tuning::prefs::
-                      kBackgroundTabTrimDelaySeconds] =
+                      kBackgroundTabTrimRepeatSeconds] =
        settings_api::PrefType::kNumber;
 +  (*s_allowlist)[performance_manager::user_tuning::prefs::
 +                     kTabFreezingEnabled] = settings_api::PrefType::kBoolean;
@@ -326,11 +326,11 @@
 +      tabFreezingEnabledPref_: {type: Object},
 +      tabFreezingProtectedOptions_: {type: Array},
 +      tabFreezingUnfreezeOptions_: {type: Array},
+       backgroundTrimRepeatOptions_: {type: Array},
      };
    }
- 
-@@ -83,6 +88,22 @@
-     {value: 300, name: loadTimeData.getString('backgroundTabTrimDelay5Minutes')},
+@@ -93,6 +98,22 @@
+     {value: 1800, name: loadTimeData.getString('backgroundTabTrimRepeat30Minutes')},
    ];
  
 +  protected accessor tabFreezingEnabledPref_:
@@ -352,7 +352,7 @@
    private metricsProxy_: PerformanceMetricsProxy =
        PerformanceMetricsProxyImpl.getInstance();
  
-@@ -91,6 +112,7 @@
+@@ -101,6 +122,7 @@
      this.mirrorPref(MEMORY_SAVER_MODE_PREF, 'memorySaverStatePref_');
      this.mirrorPref(
          BACKGROUND_TAB_TRIM_ENABLED_PREF, 'backgroundTrimEnabledPref_');
@@ -360,7 +360,7 @@
    }
  
    protected onMemorySaverModeChange_() {
-@@ -118,6 +140,10 @@
+@@ -128,6 +150,10 @@
      return !!this.backgroundTrimEnabledPref_?.value;
    }
  
@@ -373,9 +373,9 @@
          loadTimeData.getString('memorySaverLearnMoreUrl'));
 --- a/chrome/browser/resources/settings/performance_page/memory_page.html.ts
 +++ b/chrome/browser/resources/settings/performance_page/memory_page.html.ts
-@@ -77,5 +77,32 @@
-         sub-label="$i18n{backgroundTabTrimBrowserDescription}">
-     </settings-toggle-button>
+@@ -99,5 +99,32 @@
+       </settings-dropdown-menu>
+     </div>
    </cr-collapse>
 +  <settings-toggle-button id="tabFreezingToggle"
 +      pref-key="performance_tuning.tab_freezing.enabled"
