@@ -274,7 +274,7 @@
 +#endif  // CHROME_BROWSER_EDGE_APP_EDGE_APP_NAVIGATION_THROTTLE_H_
 --- /dev/null
 +++ b/chrome/browser/edge_app/edge_app_navigation_throttle.cc
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,242 @@
 +// Copyright 2026 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -303,13 +303,16 @@
 +#include "base/task/thread_pool.h"
 +#include "build/build_config.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "chrome/common/webui_url_constants.h"
 +#include "chrome/grit/generated_resources.h"
 +#include "components/prefs/pref_service.h"
 +#include "components/pref_registry/pref_registry_syncable.h"
 +#include "content/public/browser/navigation_controller.h"
 +#include "content/public/browser/navigation_handle.h"
++#include "content/public/common/referrer.h"
 +#include "content/public/browser/web_contents.h"
 +#include "net/base/net_errors.h"
++#include "ui/base/page_transition_types.h"
 +#include "ui/base/l10n/l10n_util.h"
 +#include "url/gurl.h"
 +
@@ -402,9 +405,12 @@
 +         message + "</p></body></html>";
 +}
 +
-+void ClosePageIfAlive(base::WeakPtr<content::WebContents> web_contents) {
++void LoadNewTabPageIfAlive(base::WeakPtr<content::WebContents> web_contents) {
 +  if (web_contents) {
-+    web_contents->ClosePage();
++    web_contents->GetController().LoadURL(GURL(chrome::kChromeUINewTabURL),
++                                          content::Referrer(),
++                                          ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
++                                          std::string());
 +  }
 +}
 +
@@ -497,16 +503,16 @@
 +    Resume();
 +    return;
 +  }
-+  // A link that opened a new, still empty tab would otherwise leave that tab
-+  // behind.
++  // A link that opened a new, still empty tab would otherwise leave a blank
++  // tab behind: show the New Tab page in it instead of closing the tab.
 +  content::WebContents* web_contents = navigation_handle()->GetWebContents();
-+  const bool close_tab = web_contents->GetController().IsInitialNavigation();
++  const bool empty_tab = web_contents->GetController().IsInitialNavigation();
 +  base::WeakPtr<content::WebContents> weak_contents =
 +      web_contents->GetWeakPtr();
 +  CancelDeferredNavigation(CANCEL_AND_IGNORE);
-+  if (close_tab) {
++  if (empty_tab) {
 +    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-+        FROM_HERE, base::BindOnce(&ClosePageIfAlive, weak_contents));
++        FROM_HERE, base::BindOnce(&LoadNewTabPageIfAlive, weak_contents));
 +  }
 +}
 +
