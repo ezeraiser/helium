@@ -403,18 +403,18 @@
  #include "chrome/browser/ui/views/frame/browser_frame_view.h"
  #include "chrome/browser/ui/views/frame/browser_native_widget.h"
  #include "chrome/browser/ui/views/frame/browser_widget.h"
-@@ -1101,6 +1102,11 @@
-     auto vertical_tab_strip_container =
-         std::make_unique<VerticalTabStripRegionView>(
-             vertical_tab_strip_state_controller,
+@@ -1113,6 +1114,11 @@
+     horizontal_tab_strip_region_view_->InitializeTabStrip();
+   }
+ 
 +  if (browser_->GetType() == BrowserWindowInterface::Type::TYPE_NORMAL) {
 +    bookmark_sidebar_view_ = AddChildView(
 +        std::make_unique<BookmarkSidebarView>(browser_.get()));
 +  }
 +
-             BrowserActions::From(browser_)->root_action_item(), this);
- 
-     if (features::IsGlassFrameEnabled()) {
+   if (auto* const organizer_panel_controller =
+           OrganizerPanelController::From(browser_)) {
+     organizer_tray_ =
 @@ -1257,6 +1263,7 @@
    top_container_separator_ = nullptr;
    find_bar_host_view_ = nullptr;
@@ -719,7 +719,7 @@
 +#endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BOOKMARK_SIDEBAR_VIEW_H_
 --- /dev/null
 +++ b/chrome/browser/ui/views/frame/bookmark_sidebar_view.cc
-@@ -0,0 +1,1180 @@
+@@ -0,0 +1,1181 @@
 +// Copyright 2026 The Helium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -733,6 +733,7 @@
 +
 +#include "base/functional/bind.h"
 +#include "base/functional/callback.h"
++#include "base/functional/callback_helpers.h"
 +#include "base/strings/utf_string_conversions.h"
 +#include "base/time/time.h"
 +#include "chrome/browser/bookmarks/bookmark_merged_surface_service.h"

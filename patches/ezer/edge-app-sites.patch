@@ -137,7 +137,7 @@
        // </if>
      };
    }
-@@ -128,6 +133,29 @@
+@@ -128,6 +133,30 @@
    // <if expr="is_win">
    protected accessor isolationStateEnabledPref_:
        chrome.settingsPrivate.PrefObject<boolean>|undefined;
@@ -149,10 +149,11 @@
 +  // </if>
 +
 +  // <if expr="is_win">
-+  protected onEdgeAppToggleChange_() {
++  protected onEdgeAppToggleChange_(e: Event) {
 +    // Check for Edge the moment the option is turned on. Without it, turn the
-+    // option off again and say why.
-+    const enabled = this.edgeAppEnabledPref_?.value;
++    // option off again and say why. The toggle's own state is read because the
++    // mirrored pref may not have caught up yet.
++    const enabled = (e.target as SettingsToggleButtonElement).checked;
 +    this.edgeAppMissing_ =
 +        !!enabled && !loadTimeData.getBoolean('edgeAppInstalled');
 +    if (this.edgeAppMissing_) {
@@ -167,7 +168,7 @@
    // </if>
  
    override connectedCallback() {
-@@ -140,6 +168,8 @@
+@@ -140,6 +169,8 @@
            'hardwareAccelerationModeEnabledPref_',
        // <if expr="is_win">
        'isolation_state.enabled': 'isolationStateEnabledPref_',
