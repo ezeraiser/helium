@@ -155,7 +155,7 @@
 +    // mirrored pref may not have caught up yet.
 +    const enabled = (e.target as SettingsToggleButtonElement).checked;
 +    this.edgeAppMissing_ =
-+        !!enabled && !loadTimeData.getBoolean('edgeAppInstalled');
++        enabled && !loadTimeData.getBoolean('edgeAppInstalled');
 +    if (this.edgeAppMissing_) {
 +      PrefService.getInstance().setPrefValue('helium.edge_app.enabled', false);
 +    }
