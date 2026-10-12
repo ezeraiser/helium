@@ -340,7 +340,7 @@
 +  return site;
 +}
 +
-+bool HostMatchesAnySite(const std::string& host, const std::string& sites) {
++bool HostMatchesAnySite(std::string_view host, const std::string& sites) {
 +  if (host.empty()) {
 +    return false;
 +  }
@@ -417,7 +417,7 @@
 +}  // namespace
 +
 +bool IsEdgeInstalled() {
-+  base::ScopedAllowBlocking allow_blocking;
++  // Called on the UI thread: two file existence checks.
 +  return !FindEdge().empty();
 +}
 +
